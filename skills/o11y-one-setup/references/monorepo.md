@@ -42,7 +42,7 @@ Apply the service test from [detect](detect.md) to every member, because librari
 5. Create one key for the repo with `create_ingestion_token.v1`, named after the repo, and never one per service: the tool allows 5 keys per user per hour.
    - Write the key into each service's gitignored `.env`.
    - Write it once into a root `.env` instead when every service already loads that file, for example through `env_file: .env` in a root `docker-compose.yml`.
-6. Verify one service at a time, per [verify](verify.md): start it, send one request, and poll `get_onboarding_status.v1` with that service's `service_name` until its `latest_trace` is newer than the start time. Then move on.
+6. Verify one service at a time, per [verify](verify.md): start it, send one request, and poll `get_onboarding_status.v1` with that service's `service_name` until its `latest_trace` has an `ingested_at` at or after the start time. Then move on.
    - If services call each other, start them together with the repo's own command (`docker compose up`, the root `dev` script) and send one request to each.
 7. A failure in one service does not stop the others. Finish them all, then report.
 
