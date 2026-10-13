@@ -75,7 +75,7 @@ The SDK must start before the app loads what it instruments. [load-order](refere
 - Call `get_onboarding_status.v1` with `service_name` set to this service's name, and note its three flags. Then record the current UTC time as the start time.
 - Start the service with the `.env` values in its environment, and send it one request or run one agent task. See [verify](references/verify.md).
 - Poll `get_onboarding_status.v1` with the same `service_name` every 5 seconds, for up to 2 minutes. With `service_name`, `latest_trace` is that service's newest trace, or null; the flags stay org-wide.
-- Success is a `latest_trace` whose `ingested_at` is at or after the start time, with `has_sent_traces` true. A flag turning true is not success on its own.
+- Success is a `latest_trace` whose `ingested_at` is at or after the start time. A flag turning true is not success on its own.
 - A `latest_trace` can be up to 14 days old, so one from before the start time is not success: keep polling.
 - Then tell the user, per service, the service name, root span, duration and trace id, and every guide-directed edit you made. Stop every process you started.
 
