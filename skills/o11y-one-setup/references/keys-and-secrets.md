@@ -14,7 +14,7 @@ It never goes into a commit, a pull request, a URL, a log, a command-line argume
 
 Look for a key that is already there, in this order:
 
-1. The service's `.env` (or `.env.local`, when the repo uses that) has an `OTEL_EXPORTER_OTLP_HEADERS` line that contains `<auth_header>=`, where `auth_header` comes from `get_ingest_config.v1`.
+1. The service's `.env` (or `.env.local`, when the repo uses that) has an `OTEL_EXPORTER_OTLP_HEADERS` line that contains `<auth_header>=`, where `auth_header` comes from `get_ingest_config.v1`, and the value is not the `<ingestion key>` placeholder.
 2. Another service in this repo has one, in a monorepo.
 3. The repo's secret manager has `OTEL_EXPORTER_OTLP_HEADERS` set.
 
