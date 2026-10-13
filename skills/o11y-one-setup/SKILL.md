@@ -46,7 +46,7 @@ For dashboards, alerts, SLOs, querying telemetry that already arrives, or sendin
 
 ## 3. Create the key
 
-- If the service's `.env` or the repo's secret manager already holds `OTEL_EXPORTER_OTLP_HEADERS` with the `auth_header` name, reuse it. Never create a second key on a re-run.
+- If the service's `.env` or the repo's secret manager already holds `OTEL_EXPORTER_OTLP_HEADERS` with the `auth_header` name, and the value is not the `<ingestion key>` placeholder, reuse it. Never create a second key on a re-run.
 - Otherwise call `create_ingestion_token.v1` with `name` set to `<repo>-<service>`, where `<repo>` is the repo name from the `origin` remote, or else the repo directory name. For several services, create one key named `<repo>` and use it for all of them.
 - Write the returned `env_line` only to a gitignored `.env`, or to the secret manager the repo already uses, following [keys-and-secrets](references/keys-and-secrets.md). Never print the key in full.
 - If the tool is missing or refuses (`not_owner_or_admin`, `no_user_on_session`, `hourly_limit_reached`, or a permission error), do not stop. Follow [members without key rights](references/keys-and-secrets.md#members-without-key-rights) and finish the other steps.
