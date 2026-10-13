@@ -49,7 +49,7 @@ Running the skill again must change nothing that is already right.
 For each service, check in order, and skip each step that is already done:
 
 1. The key: `.env` or the secret manager has `OTEL_EXPORTER_OTLP_HEADERS` with the `auth_header` name, and its value is not the `<ingestion key>` placeholder. Never create another key.
-2. The env lines: `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_PROTOCOL` match `get_ingest_config.v1`. Fix a line that differs, and say so.
+2. The env lines: `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_PROTOCOL` match `get_ingest_config.v1`, and the guide's `env` lines are there. Fix a line that differs, and say so.
 3. The packages: each guide package is in the manifest. Install only the missing ones, and leave a newer version alone.
 4. The setup files: each guide file exists at its `path_hint` and loads as its `load` says. Never add a second import, a second flag or a second copy.
 5. The start commands: each already contains `start_command.after`.
