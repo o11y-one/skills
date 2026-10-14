@@ -132,6 +132,14 @@ def owner():
         body = export_request("eval-svc", "eval-ns", "GET /")
         protobuf = {"Content-Type": "application/x-protobuf"}
         assert post(f"{mock.base}/v1/traces", body, protobuf)[0] == 401
+        name_rule = f"{CREATE} name must be 1 to 100 characters"
+        for arguments, message in (({"name": " "}, name_rule), ({"name": "x" * 101}, name_rule),
+                                   ({}, f"invalid {CREATE} args: missing field `name`"),
+                                   ({"name": 5}, f"invalid {CREATE} args: invalid type"),
+                                   ({"name": "eval", "ttl": 1}, f"invalid {CREATE} args: unknown field `ttl`")):
+            error = call(mock, CREATE, arguments)
+            assert error["code"] == -32602 and error["message"].startswith(message) and "code" not in error["data"], (arguments, error)
+        assert not mock.tokens
         token = call(mock, CREATE, {"name": "eval"})["token"]
         assert token.startswith("TEST-")
         assert post(f"{mock.base}/v1/traces", body, {AUTH_HEADER: token, "Content-Type": "application/grpc"})[0] == 415
