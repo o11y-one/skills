@@ -1,18 +1,17 @@
 """Mock o11y-one MCP server and OTLP/HTTP sink, one process, for the eval harness.
 
 /mcp speaks MCP Streamable HTTP with plain JSON responses. /v1/traces, /v1/logs and /v1/metrics accept
-OTLP/HTTP protobuf, sized or chunked, carrying a key that create_ingestion_token.v1 returned.
-get_onboarding_status.v1 reports what the sink received, so the skill's verify loop runs for real. Stdlib only.
+OTLP/HTTP protobuf or JSON, sized or chunked, carrying a key that create_ingestion_token.v1 returned.
+get_onboarding_status.v1 reports what the sink received, so the skill's verify loop runs for real.
+get_instrumentation_guide.v1 answers as the real server's guides.rs does for the fixtures' stacks, with the
+versions its versions.rs pins; it never looks a version up. Stdlib only.
 """
 import gzip
 import json
 import secrets
-import subprocess
 import threading
 import time
-import urllib.request
 from datetime import datetime, timezone
-from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 AUTH_HEADER = "x-o11y-key"
@@ -53,80 +52,114 @@ TOOLS = {
 }
 LISTED = {"owner": set(TOOLS), "busy": set(TOOLS), "blackhole": set(TOOLS), "member": set(TOOLS) - {CREATE}, "stale": set()}
 
-NODE_SETUP = """import { NodeSDK } from '@opentelemetry/sdk-node';
-import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+# The real server's pins, from its versions.rs.
+PINNED = {
+    "@opentelemetry/sdk-node": "0.222.0",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "0.222.0",
+    "@opentelemetry/resources": "2.11.0",
+    "@opentelemetry/auto-instrumentations-node": "0.80.0",
+    "opentelemetry-api": "1.45.0",
+    "opentelemetry-sdk": "1.45.0",
+    "opentelemetry-exporter-otlp-proto-http": "1.45.0",
+    "opentelemetry-instrumentation-fastapi": "0.66b0",
+    "openinference-instrumentation-langchain": "0.1.79",
+}
+NODE_PACKAGES = ["@opentelemetry/sdk-node", "@opentelemetry/api", "@opentelemetry/exporter-trace-otlp-http", "@opentelemetry/resources",
+                 "@opentelemetry/auto-instrumentations-node"]
+PY_PACKAGES = ["opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http"]
+TS_TRACING = """import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { resourceFromAttributes } from '@opentelemetry/resources';
 
-const sdk = new NodeSDK({ instrumentations: [getNodeAutoInstrumentations()] });
+const sdk = new NodeSDK({
+  resource: resourceFromAttributes({
+    'service.name': '{{service_name}}',
+    'service.namespace': '{{service_namespace}}',
+    'service.version': process.env['GIT_SHA'],
+    'deployment.environment.name': process.env['DEPLOYMENT_ENVIRONMENT'],
+  }),
+  traceExporter: new OTLPTraceExporter({ url: '{{otlp_endpoint}}/v1/traces' }),
+  instrumentations: [getNodeAutoInstrumentations()],
+});
+
 sdk.start();
 """
-PY_SETUP = """from opentelemetry import trace
+PY_TELEMETRY = """import os
+
+from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-provider = TracerProvider(resource=Resource.create())
-provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+resource = Resource.create(
+    {
+        "service.name": "{{service_name}}",
+        "service.namespace": "{{service_namespace}}",
+        "service.version": os.environ.get("GIT_SHA", ""),
+        "deployment.environment.name": os.environ.get("DEPLOYMENT_ENVIRONMENT", ""),
+    }
+)
+provider = TracerProvider(resource=resource)
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint="{{otlp_endpoint}}/v1/traces")))
 trace.set_tracer_provider(provider)
 """
-PY_LANGCHAIN = PY_SETUP + """
-from openinference.instrumentation.langchain import LangChainInstrumentor
-
-LangChainInstrumentor().instrument(tracer_provider=provider)
-"""
-FASTAPI_HOOK = """from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-
-FastAPIInstrumentor.instrument_app(app)
-"""
+FASTAPI_HOOK = "from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor\n\nFastAPIInstrumentor.instrument_app(app)\n"
+LANGCHAIN_IMPORT = "from openinference.instrumentation.langchain import LangChainInstrumentor\n"
+LANGCHAIN_CALL = "LangChainInstrumentor().instrument()\n"
 
 
-@lru_cache(maxsize=None)
-def latest(manager, name):
-    if manager == "npm":
-        return subprocess.run(["npm", "view", name, "version"], capture_output=True, text=True, check=True).stdout.strip()
-    with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/json", timeout=30) as response:
-        return json.load(response)["info"]["version"]
+def fill(template, values):
+    for key, value in values.items():
+        template = template.replace("{{" + key + "}}", value)
+    return template
 
 
-def packages(manager, *names):
-    return [{"name": name, "version": latest(manager, name), "manager_hint": manager} for name in names]
+def packages(manager, names):
+    return [{"name": name, "version": PINNED[name], "manager_hint": manager} for name in names]
 
 
-def recipe(args):
-    language, framework = args.get("language"), args.get("framework", "none")
-    agent, module = args.get("agent_framework"), args.get("module_type", "commonjs")
+def file(path_hint, contents, load):
+    return {"path_hint": path_hint, "contents": contents, "load": load}
+
+
+def recipe(args, endpoint):
+    """Node.js CommonJS with Express or no framework, and Python with FastAPI or LangChain or both. Anything else is unsupported."""
+    language, agent = args.get("language"), args.get("agent_framework")
+    framework = None if args.get("framework") in (None, "none") else args["framework"]
+    module = args.get("module_type") or "commonjs"
     service = args.get("service_name", "")
-    env = [f"OTEL_SERVICE_NAME={service}", f"OTEL_RESOURCE_ATTRIBUTES=service.namespace={args.get('service_namespace') or service}"]
-    node = ("npm", "@opentelemetry/sdk-node", "@opentelemetry/auto-instrumentations-node")
-    if language == "javascript" and framework in ("express", "none") and not agent:
-        return {
-            "packages": packages(*node),
-            "files": [{"path_hint": "tracing.mjs", "contents": NODE_SETUP, "load": "start_flag"}],
-            "start_command": {"before_hint": "node <entrypoint>", "after": "node --import ./tracing.mjs <entrypoint>"},
-            "env": env, "lockfile_refresh": ["npm install"], "verify": ["node --check tracing.mjs"],
-        }
-    if language == "typescript" and framework in ("express", "none") and module == "commonjs" and not agent:
-        return {
-            "packages": packages(*node),
-            "files": [{"path_hint": "src/tracing.ts", "contents": NODE_SETUP, "load": "first_import"}],
-            "env": env, "lockfile_refresh": ["npm install"], "verify": ["npm run build"],
-        }
-    if language == "python" and framework == "fastapi" and not agent:
-        return {
-            "packages": packages("pip", "opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http", "opentelemetry-instrumentation-fastapi"),
-            "files": [
-                {"path_hint": "telemetry.py", "contents": PY_SETUP, "load": "first_import"},
-                {"path_hint": "<module that creates the FastAPI app>", "contents": FASTAPI_HOOK, "load": "framework_hook"},
-            ],
-            "env": env, "lockfile_refresh": [], "verify": ['python -c "import telemetry"'],
-        }
-    if language == "python" and framework == "none" and agent == "langchain":
-        return {
-            "packages": packages("pip", "opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http", "openinference-instrumentation-langchain"),
-            "files": [{"path_hint": "telemetry.py", "contents": PY_LANGCHAIN, "load": "first_import"}],
-            "env": env, "lockfile_refresh": [], "verify": ['python -c "import telemetry"'],
-        }
-    reason = f"the eval mock has no recipe for {language}/{framework}/{agent or 'no agent framework'}/{module}"
+    values = {"service_name": service, "service_namespace": args.get("service_namespace") or service, "otlp_endpoint": endpoint}
+    env = [f"OTEL_EXPORTER_OTLP_ENDPOINT={endpoint}", f"OTEL_SERVICE_NAME={service}", f"OTEL_EXPORTER_OTLP_HEADERS={AUTH_HEADER}={PLACEHOLDER}",
+           "GIT_SHA=<the deployed commit SHA>", "DEPLOYMENT_ENVIRONMENT=<the deployment environment, e.g. production>"]
+    if language in ("typescript", "javascript") and framework in (None, "express") and module == "commonjs" and not agent:
+        tracing = fill(TS_TRACING, values)
+        answer = {"packages": packages("npm", NODE_PACKAGES)}
+        if language == "typescript":
+            answer["files"] = [file("tracing.ts, beside the entrypoint", tracing, "first_import"),
+                               file("the entrypoint's first line, before any other import", "import './tracing';\n", "first_import")]
+            verify = "npx tsc --noEmit"
+        else:
+            answer["files"] = [file("tracing.mjs, beside the entrypoint", tracing, "start_flag")]
+            answer["start_command"] = {"before_hint": "node <entrypoint>.js, the start script in package.json",
+                                       "after": "node --import ./tracing.mjs <entrypoint>.js"}
+            verify = "node --check tracing.mjs"
+        return {**answer, "env": env, "lockfile_refresh": ["pnpm install", "npm install", "yarn"], "verify": [verify]}
+    if language == "python" and framework in (None, "fastapi") and agent in (None, "langchain"):
+        names = PY_PACKAGES + (["opentelemetry-instrumentation-fastapi"] if framework else [])
+        names += ["openinference-instrumentation-langchain"] if agent else []
+        telemetry = fill(PY_TELEMETRY, values)
+        if agent:
+            telemetry = telemetry.replace("from opentelemetry", LANGCHAIN_IMPORT + "from opentelemetry", 1) + "\n" + LANGCHAIN_CALL
+        files = [file("telemetry.py, beside the entrypoint", telemetry, "first_import"),
+                 file("the entrypoint's first import", "import telemetry  # noqa: F401\n", "first_import")]
+        if framework:
+            files.append(file("right after `app = FastAPI(...)`", FASTAPI_HOOK, "framework_hook"))
+        return {"packages": packages("pip", names), "files": files, "env": env,
+                "lockfile_refresh": ["uv lock", "poetry lock"], "verify": ["python -m py_compile telemetry.py"]}
+    reason = f"the eval mock has no guide for {language}/{framework or 'none'}/{agent or 'no agent framework'}/{module}"
     return {"packages": [], "files": [], "env": [], "lockfile_refresh": [], "verify": [], "unsupported": reason}
 
 
@@ -203,6 +236,19 @@ def parse_traces(body):
     return batches
 
 
+def parse_json_traces(body):
+    """OTLP/JSON, which the guide's Node exporter sends and the real ingest accepts -> what parse_traces returns."""
+    batches = []
+    for resource_spans in json.loads(body).get("resourceSpans", []):
+        attributes = {a.get("key"): a["value"]["stringValue"] for a in resource_spans.get("resource", {}).get("attributes", [])
+                      if "stringValue" in a.get("value", {})}
+        spans = [{"trace_id": span.get("traceId", ""), "parent": span.get("parentSpanId") or b"", "name": span.get("name", ""),
+                  "start": int(span.get("startTimeUnixNano") or 0), "end": int(span.get("endTimeUnixNano") or 0)}
+                 for scope in resource_spans.get("scopeSpans", []) for span in scope.get("spans", [])]
+        batches.append((attributes, spans))
+    return batches
+
+
 class Mock:
     def __init__(self, mode):
         self.mode = mode
@@ -258,7 +304,7 @@ class Mock:
         if name == GUIDE:
             with self.lock:
                 self.guided.append(args.get("service_name", ""))
-            return recipe(args)
+            return recipe(args, self.base)
         if name == CREATE:
             with self.lock:
                 token = "TEST-" + secrets.token_hex(16)
@@ -293,11 +339,16 @@ class Mock:
             with self.lock:
                 self.rejected += 1
             return 401
-        if "protobuf" not in (headers.get("Content-Type") or ""):
+        content_type = headers.get("Content-Type") or ""
+        if content_type.startswith("application/json"):
+            parse = parse_json_traces
+        elif "protobuf" in content_type:
+            parse = parse_traces
+        else:
             return 415
         if headers.get("Content-Encoding") == "gzip":
             body = gzip.decompress(body)
-        batches = parse_traces(body) if signal == "traces" else []
+        batches = parse(body) if signal == "traces" else []
         now = time.time()
         with self.lock:
             self.received[signal] = True
@@ -343,7 +394,7 @@ def handler(mock):
                     return self.reply(mock.otlp(signal, self.headers, body))
                 else:
                     return self.reply(404)
-            except (ValueError, IndexError, UnicodeDecodeError, OSError):  # OSError covers a bad gzip body
+            except (ValueError, IndexError, TypeError, AttributeError, UnicodeDecodeError, OSError):  # OSError covers a bad gzip body
                 return self.reply(400)
             answer = mock.rpc(message)
             if answer is None:

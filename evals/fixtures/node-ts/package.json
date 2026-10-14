@@ -4,6 +4,6 @@
   "private": true,
   "main": "dist/server.js",
   "scripts": { "build": "tsc", "start": "node dist/server.js" },
-  "dependencies": { "express": "latest" },
-  "devDependencies": { "typescript": "latest", "@types/express": "latest", "@types/node": "latest" }
+  "dependencies": { "express": "5.3.0" },
+  "devDependencies": { "typescript": "7.0.2", "@types/express": "5.0.6", "@types/node": "26.6.5" }
 }

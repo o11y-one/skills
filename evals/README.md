@@ -8,8 +8,9 @@ No model grades anything.
 
 1. If another process already listens on one of the fixture's ports, the scenario fails at once and nothing is killed.
 2. The fixture is copied to a temp directory and committed to a fresh git repo, so the `.gitignore` and `git status` checks are real.
-3. `mock_o11y.py` starts one local HTTP server that is both the o11y-one MCP server (`/mcp`) and an OTLP/HTTP sink (`/v1/traces`, `/v1/logs`, `/v1/metrics`).
+3. `mock_o11y.py` starts one local HTTP server that is both the o11y-one MCP server (`/mcp`) and an OTLP/HTTP sink (`/v1/traces`, `/v1/logs`, `/v1/metrics`) that takes protobuf or JSON, as the real ingest does.
    - Its `get_ingest_config.v1` points at the sink.
+   - Its `get_instrumentation_guide.v1` answers as the real server does for the fixtures' stacks, at the versions the real server pins, and `unsupported` for any other stack.
    - Its `get_onboarding_status.v1` reports what the sink decoded, filtered to one service when the call passes `service_name`.
    - Its `create_ingestion_token.v1` mints `TEST-` keys, and the sink refuses any other key.
 4. Claude Code runs headless with `--plugin-dir <repo root> --mcp-config <mock> --strict-mcp-config` and an empty `CLAUDE_CONFIG_DIR`.
@@ -59,5 +60,5 @@ CI runs the evals only when someone starts the workflow by hand (Actions, CI, Ru
 ## Add a scenario
 
 1. Add a fixture directory under `fixtures/`, with synthetic names: `eval-*` services, `TEST-` tokens and `example.test` addresses.
-2. If the mock has no recipe for its language and framework, add one to `recipe()` in `mock_o11y.py`. Give package names only; versions are looked up from npm or PyPI when the mock runs.
+2. If the mock has no guide for its language and framework, add one to `recipe()` in `mock_o11y.py`: copy what the real `get_instrumentation_guide.v1` answers for it, versions included. The mock never looks a version up. Pin the fixture's own dependencies to exact versions too.
 3. Add a line to `SCENARIOS` in `run.py`, with the ports the app listens on and its checks.
