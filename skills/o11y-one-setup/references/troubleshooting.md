@@ -19,7 +19,7 @@ Symptom: the o11y-one tools are not in your tool list, or a call fails with `oau
    - Claude Code: run `/mcp`, pick `o11y-one`, and authenticate.
    - Codex: run `codex mcp login o11y-one`.
    - Cursor: sign in to `o11y-one` from its MCP settings.
-3. After a fresh sign-in, only `create_ingestion_token.v1` is missing or refused: the user is not an owner or admin. Follow the member path in [keys-and-secrets](keys-and-secrets.md#members-without-key-rights).
+3. Only `create_ingestion_token.v1` is missing or refused: don't ask for a new sign-in. Follow the member path in [keys-and-secrets](keys-and-secrets.md#members-without-key-rights).
 
 ## 401 or 403 from the exporter
 

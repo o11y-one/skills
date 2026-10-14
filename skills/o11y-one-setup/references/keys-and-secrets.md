@@ -42,7 +42,7 @@ The `env_line` it returns is the exact line to store.
 | None of these | `.env` in the service directory, the directory its start command runs in |
 
 For a secret manager, ask the user once whether to store the key there.
-- If they agree, set `OTEL_EXPORTER_OTLP_HEADERS` with that manager's own CLI. Pass the value through a file or stdin, never typed into the command line.
+- If they agree, set `OTEL_EXPORTER_OTLP_HEADERS` with that manager's own CLI. Pass the value on stdin, or through a temporary file that only its owner can read (create it under `umask 077`) and that you remove as soon as the CLI has read it. Never type the value into the command line.
 - If the CLI is missing or not signed in, or the user declines, use `.env`, and tell the user the secret name to add later.
 
 ## Write .env safely
@@ -67,11 +67,11 @@ Then:
 
 1. Don't call the tool again. Carry on with every other step: packages, setup files and start commands.
 2. Write the `OTEL_EXPORTER_OTLP_HEADERS` value from the `env` map of `get_ingest_config.v1` into the gitignored `.env` as it is. It holds the `<ingestion key>` placeholder.
-3. Tell the user, in these words or close to them: "Only owners and admins can create o11y.one ingestion keys. Ask one to create a key (Connect page, Generate key) and put it in place of `<ingestion key>` in `<path>/.env`. If you are an owner or admin, sign in to the o11y-one MCP server again and tell me to retry."
+3. Tell the user, in these words or close to them:
+   - For `hourly_limit_reached`: "You have reached the limit of 5 new o11y.one ingestion keys per hour. Nothing is wrong with your rights. Wait a while, then tell me to retry, or put an existing key in place of `<ingestion key>` in `<path>/.env`."
+   - For every other case: "Only owners and admins can create o11y.one ingestion keys. Ask one to create a key (Connect page, Generate key) and put it in place of `<ingestion key>` in `<path>/.env`. If you are an owner or admin, sign in to the o11y-one MCP server again and tell me to retry."
 4. When `.env` no longer contains `<ingestion key>`, run verify. If the user pastes a key into the chat instead, write it to `.env` and don't repeat it back.
 5. Never run verify with the placeholder still in place.
-
-For `hourly_limit_reached`, add that the limit is 5 keys per hour, so waiting an hour also works.
 
 ## Load .env for the run
 
