@@ -14,13 +14,14 @@ tags: [go, net-http, gin, echo, otelhttp, go-modules]
 
 ## Install
 
+- Before the first `go get`, copy `go.mod` and `go.sum` aside, for example to `/tmp/<service>.go.mod` and `/tmp/<service>.go.sum`.
 - For each guide package, run `go get <module>@<version>` inside the service's module directory.
 - Then run the guide's `lockfile_refresh` (`go mod tidy`), so `go.sum` matches.
-- If `go get` raises the `go` or `toolchain` line in `go.mod` (it prints `upgraded go`, `added toolchain` or `upgraded toolchain`), or fails with `requires go >=`, stop. Tell the user which module needs which Go version, and that keeping a raised line is their call. Never raise the `go` line or the toolchain as a side effect.
+- If `go get` raises the `go` or `toolchain` line in `go.mod` (it prints `upgraded go`, `added toolchain` or `upgraded toolchain`), or fails with `requires go >=`, stop. Tell the user which module needs which Go version, and ask whether to keep the raised line. If they decline, copy both files back, so `go.mod` and `go.sum` are as they were before `go get`. Never raise the `go` line or the toolchain as a side effect.
 
 ## The setup file
 
-- Write the guide's file (`telemetry.go`) in the entrypoint's package directory. Set its `package` clause to that package, usually `main`, so `main()` can call it, even when the guide's `path_hint` points at the module root. Say so in the report when the file lands away from its `path_hint`.
+- Write the guide's file (`telemetry.go`) in the entrypoint's package directory. Set its `package` clause to that package, usually `main`, so `main()` can call it, even when the guide's `path_hint` points at the module root. Say so in the report when the file lands away from its `path_hint`, and on a re-run, look for it in the entrypoint's package directory.
 - Its `load` is `call_in_main`: call the setup function as the first statement of `main()`, and defer the shutdown it returns. This call is the Go form of the first-import line, so it is a setup edit.
 
 ```go
