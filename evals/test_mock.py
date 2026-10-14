@@ -160,8 +160,21 @@ def owner():
 
 
 def member():
-    """A member's mint is refused by the live role check, as a JSON-RPC error carrying its code in data.code, and mints nothing."""
+    """A member's grant has no write permission: the key tool is unlisted, and a call to it is the permission error, with no data."""
     mock = Mock("member")
+    try:
+        assert listed(mock) == set(TOOLS) - {CREATE}
+        error = call(mock, CREATE, {"name": "eval"})
+        assert error == {"code": -32003, "message": f"oauth token does not grant permission for tool `{CREATE}`"}, error
+        assert not mock.tokens
+        assert call(mock, INGEST)["auth_header"] == AUTH_HEADER
+    finally:
+        mock.close()
+
+
+def demoted():
+    """A grant that still carries the write permission is refused by the live role check, its code in data.code, and mints nothing."""
+    mock = Mock("demoted")
     try:
         assert listed(mock) == set(TOOLS)
         refused(call(mock, CREATE, {"name": "eval"}), -32003, "not_owner_or_admin")
@@ -192,5 +205,6 @@ def other_modes():
 if __name__ == "__main__":
     owner()
     member()
+    demoted()
     other_modes()
     print("mock ok")
