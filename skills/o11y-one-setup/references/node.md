@@ -55,5 +55,7 @@ More on ordering: [load-order](load-order.md#nodejs).
 2. Start the app with the `.env` values exported. Use the production start command (`start`) rather than a watcher, so only one process runs.
 3. The port is in the code or in `PORT`. Send the request from [verify](verify.md).
 
+If the app imports `dotenv` after the setup import, or `--import ./tracing.mjs` runs before it, the user's own runs start the SDK without its config. Say so in the report, and offer to load `dotenv` ahead of the setup, with `--import dotenv/config` before the tracing flag or an `import 'dotenv/config'` above `import './tracing'`; don't change it yourself.
+
 To debug a silent run, set `OTEL_LOG_LEVEL=debug` for one run, and read the exporter errors it logs.
 The guide's setup passes its exporter in code, so `OTEL_TRACES_EXPORTER` changes nothing: spans missing from stdout are never a sign that the SDK is broken.
