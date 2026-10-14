@@ -79,7 +79,7 @@ Most runtimes don't read `.env` on their own.
 
 | The service already loads `.env` through | Then |
 | --- | --- |
-| Next.js (built in), a `dotenv` import, `load_dotenv()` from python-dotenv (when called before the setup module's import), `env_file:` in compose, a `--env-file` flag, or `uv run --env-file` | Nothing to add. |
+| Next.js (built in), a `dotenv` import (when it runs before the setup module: `node --import dotenv/config` or `--require dotenv/config` ahead of the tracing file, or a dotenv call inside the tracing file itself), `load_dotenv()` from python-dotenv (when called before the setup module's import), `env_file:` in compose, a `--env-file` flag, or `uv run --env-file` | Nothing to add. |
 | None of these | For verify, export it in the shell that starts the app: `set -a; . ./.env; set +a`. Don't change how the app loads its environment; offer that in the report instead. |
 
 ## Show it masked
