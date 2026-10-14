@@ -30,7 +30,7 @@ Symptom: the app's log shows the exporter getting 401 or 403.
 3. The value is not the `<ingestion key>` placeholder: `grep -c '<ingestion key>' .env` prints `0`.
 4. The process got the variable: in the shell that starts it, `env | grep -o '^OTEL_[A-Z_]*'` lists `OTEL_EXPORTER_OTLP_HEADERS`.
 5. The key is not expired or revoked: the `expires_at` returned when it was created is in the future. A key revoked in o11y.one can't be fixed here; take the member path to get a new one.
-6. Nothing else overrides the headers: there is no `OTEL_EXPORTER_OTLP_TRACES_HEADERS`, and no `headers` passed to an exporter in code. Remove one only if this skill added it; otherwise ask.
+6. Nothing else overrides the headers: there is no `OTEL_EXPORTER_OTLP_TRACES_HEADERS`, and no `headers` passed to an exporter in code. If you added one that isn't in the guide's file, take it out; otherwise ask.
 
 ## 404 from the exporter
 
@@ -41,8 +41,9 @@ Symptom: a 404, or "not found", from the exporter.
 3. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is not set anywhere. When it is set, exporters use it as is, so it must end in `/v1/traces`. Remove it only if this skill added it; otherwise ask.
 4. No exporter in code is given its own `url` or `endpoint`. If you added one that isn't in the guide's file, take it out; otherwise ask.
 5. Check the route without the key: `curl -s -o /dev/null -w '%{http_code}\n' -X POST -H 'Content-Type: application/x-protobuf' '<otlp_http_endpoint>/v1/traces'`.
-   - `401` means the host and path exist, so go back to the 401 entry.
+   - `401` means the route exists, so the exporter is sending elsewhere. In the shell that starts the app, list the endpoint variables the process got, names only: `env | grep -o '^OTEL_EXPORTER_OTLP[A-Z_]*ENDPOINT'`. Recheck steps 3 and 4 against that list, including any endpoint set in code. If `OTEL_EXPORTER_OTLP_ENDPOINT` is not in it, the process didn't get `.env`.
    - `404` means the endpoint from the tool is wrong for this network. Report it, and don't guess another host.
+   - Any other code, such as `000` or `403`: report the code, and don't guess another host.
 
 ## Wrong protocol
 
@@ -66,9 +67,13 @@ Symptom: the app serves the request, the log shows no exporter errors, and nothi
    - Python under `opentelemetry-instrument`: `OTEL_TRACES_EXPORTER=otlp,console`, which prints each span.
    - Java: `OTEL_JAVAAGENT_DEBUG=true`, which logs each span the agent creates.
    - Printed spans mean export is the problem; see the 401, 404 and protocol entries. Under `opentelemetry-instrument` or the Java agent, no printed spans means the setup didn't load, or saw no request.
-5. A short-lived process exits before it flushes. Go needs the deferred shutdown, and Python must not end with `os._exit`. Changing how a program exits is outside the setup edits, so ask the user first.
+5. A short-lived process exits before it flushes.
+   - Go needs the deferred shutdown.
+   - Python must not end with `os._exit`.
+   - A Node.js script that exits on its own sends its last spans only if it awaits the SDK's shutdown first, unless the guide's file already does that.
+   - Changing how a program exits is outside the setup edits, so ask the user first.
 6. Some setups send nothing by design: Next.js edge routes with a Node-only setup, and Vercel AI SDK calls without `experimental_telemetry`. See [nextjs](nextjs.md) and [agents](agents.md).
-7. Verify passed, but the user's own runs send nothing: the app loads `.env` with `dotenv` or `load_dotenv()` after the setup module, so the SDK starts without its config. Verify still passes, because it exports `.env` in the shell. Don't move the call yourself; offer the fix in [node](node.md#run-it-for-verify) or [python](python.md#run-it-for-verify) in the report.
+7. Nothing arrives only from runs started without `.env` exported, such as the user's own: the app loads `.env` with `dotenv` or `load_dotenv()` after the setup module, so the SDK starts without its config. Verify's run still sends spans, because it exports `.env` in the shell. Don't move the call yourself; offer the fix in [node](node.md#run-it-for-verify) or [python](python.md#run-it-for-verify) in the report.
 
 ## Spans locally but none under worker processes
 
