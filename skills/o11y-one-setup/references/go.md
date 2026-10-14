@@ -21,7 +21,7 @@ tags: [go, net-http, gin, echo, otelhttp, go-modules]
 ## The setup file
 
 - Write the guide's file (`telemetry.go`) in the entrypoint's package directory. Set its `package` clause to that package, usually `main`, so `main()` can call it, even when the guide's `path_hint` points at the module root. Say so in the report when the file lands away from its `path_hint`.
-- Its `load` is `call_in_main`: call the setup function as the first statement of `main()`, and defer the shutdown it returns.
+- Its `load` is `call_in_main`: call the setup function as the first statement of `main()`, and defer the shutdown it returns. This call is the Go form of the first-import line, so it is a setup edit.
 
 ```go
 func main() {

@@ -73,10 +73,10 @@ export async function register() {
   - `FastAPIInstrumentor.instrument_app(app)` goes after `app = FastAPI()`.
   - `FlaskInstrumentor().instrument_app(app)` goes after `app = Flask(__name__)`.
   - It is never a global `instrument()` in `telemetry.py`.
-- Django: `DjangoInstrumentor().instrument()` goes after `DJANGO_SETTINGS_MODULE` is set, and before `get_wsgi_application()` or `get_asgi_application()`. Do this in `wsgi.py`, `asgi.py` and `manage.py`.
+- Django: `DjangoInstrumentor().instrument()` goes after `DJANGO_SETTINGS_MODULE` is set, and before `get_wsgi_application()` in `wsgi.py`, `get_asgi_application()` in `asgi.py`, and `execute_from_command_line()` in `manage.py`.
 - Forking servers: `opentelemetry-instrument` and gunicorn `--preload` start the SDK in the parent process, before the workers fork. OpenTelemetry's Python docs warn that more than one worker can then break export, and recommend starting the SDK after the fork. Fix it in this order:
   1. Use the guide's `first_import` setup without `--preload`, so each worker starts its own SDK.
-  2. With `--preload`, run the setup in a `post_fork(server, worker)` hook in `gunicorn.conf.py`, instead of as the entrypoint's first import.
+  2. With `--preload`, run the setup in a `post_fork(server, worker)` hook in `gunicorn.conf.py`, instead of as the entrypoint's first import. That hook is outside the setup edits, so ask the user first, and list it in the report.
   3. For an ASGI app with several workers, run gunicorn with a Uvicorn worker class plus that hook. This changes the server, so ask first.
 
   For verify, run one worker.
