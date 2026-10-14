@@ -52,8 +52,9 @@ import express from 'express'
   - It goes at the project root, or in `src/` when `src/app` or `src/pages` exists.
   - It never goes in `next.config.*`, or inside `app/` or `pages/`.
 - `@vercel/otel` also runs in the edge runtime. A Node-only SDK must load only when `process.env.NEXT_RUNTIME === 'nodejs'`.
-- If `next build` fails on an OpenTelemetry package, add that package to `serverExternalPackages` in `next.config.*`.
+- If `next build` fails on an OpenTelemetry package, that package belongs in `serverExternalPackages` in `next.config.*`.
   - Next.js 15 and later use that name; earlier versions call it `experimental.serverComponentsExternalPackages`.
+  - That edit is outside the setup edits, so ask the user first, and list it in the report.
   - Add only the package the error names.
 
 ```ts
