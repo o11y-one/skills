@@ -15,6 +15,8 @@ No model grades anything.
    - Its `get_instrumentation_guide.v1` answers as the real server does for the fixtures' stacks, at the versions the real server pins, and `unsupported` for any other stack.
    - Its `get_onboarding_status.v1` reports what the sink decoded, filtered to one service when the call passes `service_name`.
    - Its `create_ingestion_token.v1` mints `TEST-` keys, five at most, and the sink refuses any other key. A sixth is refused with `hourly_limit_reached`.
+   - Mode `member` doesn't list `create_ingestion_token.v1`, as a member's grant doesn't, and a call to it gets the permission error.
+   - Mode `demoted` lists it and refuses it with `not_owner_or_admin`, as for an owner demoted since sign-in. Only `test_mock.py` uses it.
 4. Claude Code runs headless with `--plugin-dir <repo root> --mcp-config <mock> --strict-mcp-config` and an empty `CLAUDE_CONFIG_DIR`.
    - Only this plugin's skill and Claude Code's built-in skills load, and only the mock server connects.
    - Your own Claude Code settings, plugins, hooks and memory stay out of the run, and so does every `OTEL_*` variable. Admin-managed settings still apply, and the rest of your environment, `ANTHROPIC_API_KEY` included, reaches the agent and every command it runs.
@@ -33,7 +35,7 @@ No model grades anything.
 | `python-fastapi` | `python-fastapi` | owner | The same, for `eval-py-api` |
 | `langchain-agent` | `langchain-agent` | owner | The same, for `eval-lc-agent`: a LangChain chain on a fake chat model, so no provider key is needed |
 | `already-instrumented` | `node-otel` | owner | A trace from `eval-node-otel`, and still exactly one `new NodeSDK(` in the repo |
-| `member` | `node-express` | member (the key tool refuses with `not_owner_or_admin`, as for an owner demoted since sign-in) | OpenTelemetry is installed, `.env` holds the `<ingestion key>` placeholder, and the agent tells the user an owner or admin must create the key |
+| `member` | `node-express` | member (no key tool) | OpenTelemetry is installed, `.env` holds the `<ingestion key>` placeholder, and the agent tells the user an owner or admin must create the key |
 | `monorepo-3` | `monorepo` | owner | Traces from `eval-orders`, `eval-billing` and `eval-notify` with namespace `eval-mono`, all from one key |
 | `stale-mcp` | `node-express` | stale (no tools) | No file changes, and the agent tells the user to sign in again with `/mcp` |
 | `no-trace` | `node-express` | blackhole (a 3-day-old trace that never updates) | The agent polls for 100 to 600 seconds, in at most 60 calls, then stops without printing the key |

@@ -54,9 +54,10 @@ TOOLS = {
         {"type": "object", "properties": {"service_name": {"type": "string"}}},
     ),
 }
-# A member's grant here still carries the key tool's write permission, as an owner demoted since sign-in does, so the
-# call reaches the live role check and is refused there.
-LISTED = {"owner": set(TOOLS), "busy": set(TOOLS), "blackhole": set(TOOLS), "member": set(TOOLS), "stale": set()}
+# A member is granted read tools only, so the key tool is unlisted. A demoted owner's grant still carries its write
+# permission, so the call reaches the live role check and is refused there.
+LISTED = {"owner": set(TOOLS), "busy": set(TOOLS), "blackhole": set(TOOLS), "member": set(TOOLS) - {CREATE},
+          "demoted": set(TOOLS), "stale": set()}
 MINTS_PER_HOUR = 5
 TENANT = "00000000-0000-4000-8000-00000000e7a1"
 
@@ -359,7 +360,7 @@ class Mock:
     def mint(self, name):
         if not 1 <= len(name) <= 100:
             raise Fault(-32602, f"{CREATE} name must be 1 to 100 characters")
-        if self.mode == "member":
+        if self.mode == "demoted":
             raise Fault(-32003, "only an organization's owners and admins create ingestion keys; ask one, or paste a key you were given",
                         "not_owner_or_admin")
         with self.lock:
