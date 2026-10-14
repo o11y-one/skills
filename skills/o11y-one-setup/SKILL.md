@@ -15,7 +15,7 @@ Connect every service in this repo to o11y.one, and prove it with that service's
 Work through the steps in order; each one links the reference that holds the detail.
 The endpoint, protocol, auth header, packages, versions and setup-file contents come from the o11y-one MCP tools while you work.
 Never write any of them from memory.
-Each tool's values are under `result` in its answer; every field this skill names is read from there.
+A tool's values are under `result` in a successful answer, and every field this skill names is read from there; a refusal is an error, with its code in `data.code`.
 
 This skill only connects a repo.
 For dashboards, alerts, SLOs, querying telemetry that already arrives, or sending telemetry to another vendor, say this skill doesn't apply and stop.

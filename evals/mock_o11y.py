@@ -354,7 +354,13 @@ class Mock:
                 self.guided.append(args.get("service_name", ""))
             return recipe(args, self.base), []
         if name == CREATE:
-            return self.mint(str(args.get("name", "")).strip())
+            # CreateIngestionTokenV1Args: serde's deny_unknown_fields over one required string, `name`.
+            extra = sorted(set(args) - {"name"})
+            if extra or not isinstance(args.get("name"), str):
+                detail = (f"unknown field `{extra[0]}`, expected `name`" if extra else "missing field `name`" if "name" not in args
+                          else f"invalid type: `{json.dumps(args['name'])}`, expected a string")
+                raise Fault(-32602, f"invalid {CREATE} args: {detail}")
+            return self.mint(args["name"].strip())
         return self.status(args.get("service_name"))
 
     def mint(self, name):
