@@ -177,6 +177,12 @@ def run(name):
         result = git(work, *FIXTURE_GIT, *args)
         if result.returncode:
             return [f"git {' '.join(args)} failed in {work}: {result.stderr.strip()}"]
+    # Under -p nobody can answer the skill's question before it creates a virtualenv, so a Python fixture starts with one.
+    venv = work / ".venv"
+    if (work / "pyproject.toml").exists():
+        result = subprocess.run(["python3", "-m", "venv", str(venv)], capture_output=True, text=True)
+        if result.returncode:
+            return [f"python3 -m venv failed in {work}: {result.stderr.strip()}"]
     mock = mock_o11y.Mock(mode)
     config = work.with_name(work.name + "-mcp.json")
     config.write_text(json.dumps({"mcpServers": {"o11y-one": {"type": "http", "url": f"{mock.base}/mcp"}}}))
@@ -191,6 +197,9 @@ def run(name):
     ]
     env = {key: value for key, value in os.environ.items() if not key.startswith("OTEL_")}
     env["CLAUDE_CONFIG_DIR"] = str(claude_dir)
+    if venv.is_dir():
+        env["VIRTUAL_ENV"] = str(venv)
+        env["PATH"] = f"{venv / 'bin'}{os.pathsep}{env['PATH']}"
     failures = []
     agent = subprocess.Popen(command, cwd=work, env=env, stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
