@@ -10,9 +10,10 @@ An agent trace shows each run as a tree: the agent or chain at the root, with th
 
 ## Conventions
 
-- Python and JavaScript agent frameworks are instrumented with OpenInference instrumentations, which write `llm.*`, `input.*`, `output.*` and `openinference.span.kind` attributes.
+- Python agent frameworks are instrumented with OpenInference instrumentations, which write `llm.*`, `input.*`, `output.*` and `openinference.span.kind` attributes.
 - The Vercel AI SDK writes its own `ai.*` attributes.
 - o11y.one maps both onto the OpenTelemetry GenAI semantic conventions (`gen_ai.*`) when it ingests them, so model, token and tool fields line up across frameworks. Don't add a second GenAI instrumentation to get `gen_ai.*` names.
+- The JavaScript ports, LangChain.js, OpenAI Agents JS and LlamaIndex.TS, get `unsupported` from the guide. Take the manual route in [When the guide says unsupported](#when-the-guide-says-unsupported).
 
 ## Per framework
 
@@ -23,7 +24,7 @@ Pass `agent_framework` to `get_instrumentation_guide.v1`. When the agent runs in
 | LangChain, LangGraph | `langchain` | Chain, graph node, tool, retriever and model spans | The instrumentor must run before chains or graphs are built, so load the setup first, as its `load` value says |
 | OpenAI Agents SDK | `openai_agents` | Agent, handoff, tool and model spans | The SDK's own tracing to OpenAI keeps running; leave its settings alone |
 | Vercel AI SDK | `vercel_ai` | A span for each AI SDK call | It is opt-in per call; see below |
-| CrewAI | `crewai` | Crew, agent, task and tool spans | The guide may answer `unsupported`; see below |
+| CrewAI | `crewai` | Crew, agent, task and tool spans | Its instrumentation needs Python below 3.14, and its `manager_hint` says so. On a newer Python, tell the user, and offer the manual route below |
 | LlamaIndex | `llamaindex` | Query, retrieval, synthesis, model and embedding spans | The same load rule as LangChain |
 
 ## Vercel AI SDK
@@ -42,23 +43,29 @@ const { text } = await generateText({ model, prompt, experimental_telemetry: { i
 
 ## When the guide says unsupported
 
-The guide answers `unsupported` rather than name a package it hasn't confirmed, and CrewAI can get that answer.
+The guide answers `unsupported` rather than name a package it hasn't confirmed.
+Today the JavaScript ports get that answer: LangChain.js, OpenAI Agents JS and LlamaIndex.TS.
 When that happens:
 
 1. Tell the user the guide's reason, word for word.
 2. Never install a package the guide didn't list, whatever its name suggests.
 3. Offer the manual route, and wait for a yes:
    - Call `get_instrumentation_guide.v1` again with the same `language` and `framework` but no `agent_framework`, and set up the plain SDK it returns.
-   - Wrap the agent's entry call (`crew.kickoff()`, `agent.run()`, or the function the entrypoint calls) in a span with the OpenTelemetry API, so that each run arrives as one trace:
+   - Wrap the agent's entry call (`chain.invoke()`, `run(agent, input)`, `queryEngine.query()`, or the function the entrypoint calls) in a span with the OpenTelemetry API, so that each run arrives as one trace:
 
-     ```python
-     from opentelemetry import trace
+     ```ts
+     import { trace } from '@opentelemetry/api'
 
-     tracer = trace.get_tracer("agent")
-
-     with tracer.start_as_current_span("crew.kickoff"):
-         result = crew.kickoff()
+     const result = await trace.getTracer('agent').startActiveSpan('agent.run', async (span) => {
+       try {
+         return await chain.invoke(input)
+       } finally {
+         span.end()
+       }
+     })
      ```
+
+     For a Python agent, such as CrewAI on Python 3.14 or later, wrap `crew.kickoff()` the same way: `with trace.get_tracer("agent").start_as_current_span("crew.kickoff"):`, after `from opentelemetry import trace`.
 
    - The wrap is outside the setup edits, so it needs that yes. List it in the report.
    - Model calls inside the run appear as child spans only if the guide covered the model client.
