@@ -18,7 +18,10 @@ tags: [nextjs, vercel-otel, instrumentation-ts, edge, server-external-packages]
 - The guide returns `instrumentation.ts` (or `.js`), which calls `registerOTel` from `@vercel/otel` inside `export function register()`.
 - Put it at the project root, next to `package.json`, or in `src/` when the app lives in `src/app` or `src/pages`. Never put it in `next.config.*`, or inside `app/` or `pages/`.
 - If `next.config.*` sets `pageExtensions`, the file name takes the same extension pattern.
-- Next.js 15 and later load `instrumentation.ts` with no config. Earlier versions need `experimental.instrumentationHook: true` in `next.config.*`. Read the `next` version from the lockfile, and add the flag only for those earlier versions.
+- Read the `next` version from the lockfile:
+  - 15 and later load `instrumentation.ts` with no config.
+  - 13.2 to 14 need `experimental.instrumentationHook: true` in `next.config.*`. That edit is outside the setup edits, so ask the user first, and list it in the report.
+  - Before 13.2 there is no instrumentation hook. Tell the user, and stop for this service.
 - Install the guide's packages as dependencies of the Next.js app, not of the workspace root.
 
 ## Runtimes
@@ -28,8 +31,9 @@ tags: [nextjs, vercel-otel, instrumentation-ts, edge, server-external-packages]
 
 ## Bundling
 
-If `next build` fails on an OpenTelemetry package (`Module not found`, or a `require` that can't be resolved), add that package to `serverExternalPackages` in `next.config.*`.
+If `next build` fails on an OpenTelemetry package (`Module not found`, or a `require` that can't be resolved), that package belongs in `serverExternalPackages` in `next.config.*`.
 That is the name in Next.js 15 and later; earlier versions call it `experimental.serverComponentsExternalPackages`.
+That edit is outside the setup edits, so ask the user first, and list it in the report.
 Add only the package the error names, then build again.
 `require-in-the-middle` and `import-in-the-middle` are already on Next.js's default list.
 
