@@ -16,7 +16,7 @@ Java uses the OpenTelemetry Java agent. It needs no code changes and no new depe
 
 ## The agent jar
 
-- Get the jar exactly as the guide's `files` or `start_command` say. Never type a download URL or a version yourself.
+- The guide's `files` is empty, and its one package is the agent. Get the jar exactly as `packages[0].manager_hint` says: from the URL it gives, to the path it names. Never type a download URL or a version yourself, and never add the agent to `pom.xml` or `build.gradle`.
 - For a `Dockerfile`, download it during the image build, to a fixed path such as `/otel/opentelemetry-javaagent.jar`.
 - For local runs, keep it at a path inside the service, and add that path to `.gitignore`. Never commit the jar.
 

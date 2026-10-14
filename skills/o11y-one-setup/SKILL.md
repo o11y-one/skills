@@ -53,7 +53,8 @@ For dashboards, alerts, SLOs, querying telemetry that already arrives, or sendin
 
 ## 4. Apply the change
 
-- Install the guide's `packages` at the versions it gives, with the package manager the repo already uses, so the manifest and the lockfile change together.
+- Before you install, read the install rules in the service's language file: [node](references/node.md#install), [python](references/python.md#install), [go](references/go.md#install) or [java](references/java.md#the-agent-jar), plus [agents](references/agents.md) for an agent framework.
+- Install the guide's `packages` at the versions it gives, with the package manager the repo already uses, so the manifest and the lockfile change together. A package's `manager_hint` names its ecosystem, not the manager to run: use the repo's own manager, but follow any download location or requirement the hint adds, such as the Java agent's download path or a Python version limit.
 - Write each of the guide's `files` at its `path_hint`, relative to the service directory, and load it as its `load` value says (step 5). A `path_hint` that names an existing file means insert into it, never overwrite it.
 - If there is a `start_command`, replace every start command that matches `before_hint` with `after`.
 - Add `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_PROTOCOL` from the `env` map of `get_ingest_config.v1`, and the guide's `env` lines, to the `.env` that holds the key. Skip a line that is already there. Never write a `<placeholder>` value, except on the member path.
