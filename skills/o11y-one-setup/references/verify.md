@@ -7,7 +7,7 @@ tags: [verify, first-trace, onboarding-status, polling]
 # Verify the first trace
 
 Setup is done when o11y.one reports a trace that the service you set up sent during this run.
-Always pass `service_name` to `get_onboarding_status.v1`: `latest_trace` is then that service's newest trace, or null, while the three flags stay org-wide.
+Always pass `service_name` to `get_onboarding_status.v1`. Its values are under `result` in its answer: `result.latest_trace` is then that service's newest trace, or null, while the three flags beside it stay org-wide.
 That trace can be up to 14 days old, so match it on time.
 
 ## Steps
@@ -22,7 +22,7 @@ That trace can be up to 14 days old, so match it on time.
    - Worker or script: run one job or one invocation.
    - Agent: run one task; see [agents](agents.md).
 5. Poll `get_onboarding_status.v1` with the same `service_name` every 5 seconds, for up to 2 minutes (24 calls).
-6. Stop as soon as `latest_trace` is not null and its `ingested_at` is at or after the start time. A flag turning true is not success on its own.
+6. Stop as soon as `latest_trace` is not null and its `ingested_at` is at or after the start time. `ingested_at` is an RFC 3339 UTC time with fractional seconds: compare it as a time, not as text. A flag turning true is not success on its own.
 7. Stop the process you started.
 
 A `latest_trace` from before the start time is not success, even when `has_sent_traces` is true. Keep polling.
