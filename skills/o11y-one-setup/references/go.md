@@ -22,22 +22,9 @@ tags: [go, net-http, gin, echo, otelhttp, go-modules]
 ## The setup file
 
 - Write the guide's file (`telemetry.go`) in the entrypoint's package directory. Set its `package` clause to that package, usually `main`, so `main()` can call it, even when the guide's `path_hint` points at the module root. Say so in the report when the file lands away from its `path_hint`, and on a re-run, look for it in the entrypoint's package directory.
-- Its `load` is `call_in_main`: call the setup function as the first statement of `main()`, and defer the shutdown it returns. This call is the Go form of the first-import line, so it is a setup edit.
-
-```go
-func main() {
-	ctx := context.Background()
-	shutdown, err := setupOTel(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer shutdown(ctx)
-
-	// the rest of main, unchanged
-}
-```
-
-The function's name and signature come from the guide's file; `setupOTel` is only an example.
+- Its `load` is `call_in_main`. The guide's second `call_in_main` file, whose `path_hint` is a place in `func main()`, is the call. Paste its contents as they are, as the first statements of `main()`; never write the call yourself. This call is the Go form of the first-import line, so it is a setup edit.
+- Add each import the call's `path_hint` names, such as `context` or `log`, to the file that declares `main()`, when that file doesn't import it yet.
+- If `main()` already declares a `ctx`, drop the call's `ctx :=` line, so `ctx` is never declared twice, and paste the rest of the call right after the line that declares `main()`'s `ctx`, so `ctx` exists before the call uses it.
 
 ## Handlers
 
