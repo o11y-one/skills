@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": { "start": "node --require ./tracing.js server.js" },
   "dependencies": {
-    "@opentelemetry/auto-instrumentations-node": "latest",
-    "@opentelemetry/sdk-node": "latest"
+    "@opentelemetry/auto-instrumentations-node": "0.80.0",
+    "@opentelemetry/sdk-node": "0.222.0"
   }
 }

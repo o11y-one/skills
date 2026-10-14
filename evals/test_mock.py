@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Self-check for mock_o11y.py: MCP replies, modes, key handling, OTLP decoding of sized and chunked bodies, and status with and without service_name. No agent, no network."""
+"""Self-check for mock_o11y.py: MCP replies, modes, key handling, OTLP decoding of protobuf, JSON, sized and chunked bodies, status with and without service_name, and the guides' shape. No agent, no network."""
 import calendar
 import gzip
 import http.client
@@ -38,6 +38,12 @@ def export_request(service, namespace, span_name):
     return field(1, field(1, attributes) + field(2, field(2, span)))
 
 
+def json_request(service, span_name):
+    resource = {"attributes": [{"key": "service.name", "value": {"stringValue": service}}]}
+    span = {"traceId": "ab" * 16, "spanId": "cd" * 8, "name": span_name, "startTimeUnixNano": "1000000000", "endTimeUnixNano": 1_250_000_000}
+    return json.dumps({"resourceSpans": [{"resource": resource, "scopeSpans": [{"spans": [span]}]}]}).encode()
+
+
 def post(url, body, headers):
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
@@ -72,6 +78,29 @@ def listed(mock):
     return {tool["name"] for tool in rpc(mock, "tools/list")["result"]["tools"]}
 
 
+def guides(mock):
+    def guide(**args):
+        return call(mock, GUIDE, {"service_name": "eval-svc", **args})
+
+    ts = guide(language="typescript", framework="express")
+    assert [f["load"] for f in ts["files"]] == ["first_import", "first_import"] and "start_command" not in ts
+    assert ts["files"][1]["contents"] == "import './tracing';\n" and ts["verify"] == ["npx tsc --noEmit"]
+    assert f"url: '{mock.base}/v1/traces'" in ts["files"][0]["contents"]
+    js = guide(language="javascript", framework="none", service_namespace="eval-ns")
+    assert js["start_command"]["after"] == "node --import ./tracing.mjs <entrypoint>.js" and js["verify"] == ["node --check tracing.mjs"]
+    assert "'service.namespace': 'eval-ns'" in js["files"][0]["contents"]
+    py = guide(language="python", framework="fastapi")
+    assert [f["load"] for f in py["files"]] == ["first_import", "first_import", "framework_hook"]
+    lc = guide(language="python", agent_framework="langchain")["files"][0]["contents"]
+    assert lc.index(" import LangChainInstrumentor\n") < lc.index("from opentelemetry import trace")
+    assert lc.endswith("\nLangChainInstrumentor().instrument()\n")
+    for answer in (ts, js, py):
+        assert f"OTEL_EXPORTER_OTLP_HEADERS={AUTH_HEADER}=<ingestion key>" in answer["env"]
+        assert not any(line.startswith("OTEL_RESOURCE_ATTRIBUTES=") for line in answer["env"])
+        assert all(package["version"][0].isdigit() for package in answer["packages"])
+    assert "unsupported" in guide(language="java")
+
+
 def owner():
     mock = Mock("owner")
     try:
@@ -81,7 +110,7 @@ def owner():
         assert listed(mock) == set(TOOLS)
         config = call(mock, INGEST)
         assert config["auth_header"] == AUTH_HEADER and config["env"]["OTEL_EXPORTER_OTLP_ENDPOINT"] == mock.base
-        assert "unsupported" in call(mock, GUIDE, {"language": "java", "service_name": "eval-java"})
+        guides(mock)
         assert "latest_trace" not in call(mock, STATUS)
         assert call(mock, STATUS, {"service_name": "eval-svc"})["latest_trace"] is None
         body = export_request("eval-svc", "eval-ns", "GET /")
@@ -89,7 +118,7 @@ def owner():
         assert post(f"{mock.base}/v1/traces", body, protobuf)[0] == 401
         token = call(mock, CREATE, {"name": "eval"})["token"]
         assert token.startswith("TEST-")
-        assert post(f"{mock.base}/v1/traces", body, {AUTH_HEADER: token, "Content-Type": "application/json"})[0] == 415
+        assert post(f"{mock.base}/v1/traces", body, {AUTH_HEADER: token, "Content-Type": "application/grpc"})[0] == 415
         gzipped = {**protobuf, AUTH_HEADER: token, "Content-Encoding": "gzip"}
         assert post(f"{mock.base}/v1/traces", gzip.compress(body), gzipped)[0] == 200
         status = call(mock, STATUS, {"service_name": "eval-svc"})
@@ -101,6 +130,8 @@ def owner():
         chunked = export_request("eval-chunked", "eval-ns", "GET /chunked")
         assert post(f"{mock.base}/v1/traces", iter([chunked[:9], chunked[9:]]), {**protobuf, AUTH_HEADER: token})[0] == 200
         assert call(mock, STATUS, {"service_name": "eval-chunked"})["latest_trace"]["root_span_name"] == "GET /chunked"
+        assert post(f"{mock.base}/v1/traces", json_request("eval-json", "GET /json"), {AUTH_HEADER: token, "Content-Type": "application/json"})[0] == 200
+        assert call(mock, STATUS, {"service_name": "eval-json"})["latest_trace"]["duration_ms"] == 250.0
         assert malformed_chunk(mock) == 400
         assert post(f"{mock.base}/mcp", b"{not json", {"Content-Type": "application/json"})[0] == 400
     finally:
