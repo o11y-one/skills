@@ -1,16 +1,20 @@
 """Mock o11y-one MCP server and OTLP/HTTP sink, one process, for the eval harness.
 
-/mcp speaks MCP Streamable HTTP with plain JSON responses. /v1/traces, /v1/logs and /v1/metrics accept
-OTLP/HTTP protobuf or JSON, sized or chunked, carrying a key that create_ingestion_token.v1 returned.
-get_onboarding_status.v1 reports what the sink received, so the skill's verify loop runs for real.
+/mcp speaks MCP Streamable HTTP with plain JSON responses. A tool answers as the real server's onboarding tools
+do: its payload under `result` in mcp_response_envelope.v1, both as structuredContent and as JSON text, and a
+refusal as a JSON-RPC error whose code leads its message and is repeated in data.code. /v1/traces, /v1/logs and
+/v1/metrics accept OTLP/HTTP protobuf or JSON, sized or chunked, carrying a key that create_ingestion_token.v1
+returned. get_onboarding_status.v1 reports what the sink received, so the skill's verify loop runs for real.
 get_instrumentation_guide.v1 answers as the real server's guides.rs does for the fixtures' stacks, with the
 versions its versions.rs pins; it never looks a version up. Stdlib only.
 """
 import gzip
+import hashlib
 import json
 import secrets
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -50,7 +54,11 @@ TOOLS = {
         {"type": "object", "properties": {"service_name": {"type": "string"}}},
     ),
 }
-LISTED = {"owner": set(TOOLS), "busy": set(TOOLS), "blackhole": set(TOOLS), "member": set(TOOLS) - {CREATE}, "stale": set()}
+# A member's grant here still carries the key tool's write permission, as an owner demoted since sign-in does, so the
+# call reaches the live role check and is refused there.
+LISTED = {"owner": set(TOOLS), "busy": set(TOOLS), "blackhole": set(TOOLS), "member": set(TOOLS), "stale": set()}
+MINTS_PER_HOUR = 5
+TENANT = "00000000-0000-4000-8000-00000000e7a1"
 
 # The real server's pins, from its versions.rs.
 PINNED = {
@@ -163,8 +171,39 @@ def recipe(args, endpoint):
     return {"packages": [], "files": [], "env": [], "lockfile_refresh": [], "verify": [], "unsupported": reason}
 
 
-def iso(seconds):
-    return datetime.fromtimestamp(seconds, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+def rfc3339(nanos):
+    """UTC with nanoseconds, as the real server writes ingested_at."""
+    seconds, fraction = divmod(nanos, 10**9)
+    return datetime.fromtimestamp(seconds, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + f".{fraction:09d}Z"
+
+
+class Fault(Exception):
+    """The real McpRpcFault. A refusal's slug leads the message, which is what a client shows the model, and is data.code."""
+
+    def __init__(self, code, sentence, slug=None):
+        super().__init__(f"{slug}: {sentence}" if slug else sentence)
+        self.code, self.data = code, {"code": slug} if slug else {}
+
+
+def audit(name, args, rejection, correlation_ids):
+    return {
+        "occurred_at": rfc3339(time.time_ns()), "invocation_id": str(uuid.uuid4()), "tool_name": name,
+        "tenant_id": TENANT, "org_id": TENANT, "user_id": TENANT, "scope_summary": "context=null|baseline=null|comparison=null",
+        "params_hash": hashlib.sha256(json.dumps({"arguments": args, "tool_name": name}, sort_keys=True).encode()).hexdigest(),
+        "outcome": "rejected" if rejection else "success", "rejection_reason": rejection, "latency_ms": 1,
+        "correlation_ids": sorted(set(correlation_ids)),
+    }
+
+
+def envelope(name, payload, record):
+    """mcp_success_envelope, for a payload with no rows, warnings or cursor."""
+    return {
+        "result": payload,
+        "meta": {"tool": name, "envelope_format": "mcp_response_envelope.v1", "result_format": "json_v1", "row_count": 0,
+                 "truncated": False, "next_cursor": None},
+        "execution": {"latency_ms": record["latency_ms"]}, "warnings": [], "audit": record,
+        "correlation_ids": record["correlation_ids"], "suggested_next_calls": [],
+    }
 
 
 def varint(buf, i):
@@ -285,12 +324,20 @@ class Mock:
             if name not in LISTED[self.mode]:
                 error = {"code": -32003, "message": f"oauth token does not grant permission for tool `{name}`"}
                 return {"jsonrpc": "2.0", "id": message["id"], "error": error}
-            result = {"content": [{"type": "text", "text": json.dumps(self.tool(name, args))}], "isError": False}
+            try:
+                payload, correlation_ids = self.tool(name, args)
+            except Fault as fault:
+                data = {**fault.data, "audit": audit(name, args, str(fault), [])}
+                return {"jsonrpc": "2.0", "id": message["id"], "error": {"code": fault.code, "message": str(fault), "data": data}}
+            answer = envelope(name, payload, audit(name, args, None, correlation_ids))
+            result = {"content": [{"type": "text", "text": json.dumps(answer, separators=(",", ":"))}],
+                      "structuredContent": answer, "isError": False}
         else:
             return {"jsonrpc": "2.0", "id": message["id"], "error": {"code": -32601, "message": f"method not found: {method}"}}
         return {"jsonrpc": "2.0", "id": message["id"], "result": result}
 
     def tool(self, name, args):
+        """The payload and its correlation ids, or a Fault."""
         if name == INGEST:
             return {
                 "otlp_http_endpoint": self.base, "otlp_grpc_endpoint": self.base,
@@ -300,39 +347,53 @@ class Mock:
                     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
                     "OTEL_EXPORTER_OTLP_HEADERS": f"{AUTH_HEADER}={PLACEHOLDER}",
                 },
-            }
+            }, []
         if name == GUIDE:
             with self.lock:
                 self.guided.append(args.get("service_name", ""))
-            return recipe(args, self.base)
+            return recipe(args, self.base), []
         if name == CREATE:
-            with self.lock:
-                token = "TEST-" + secrets.token_hex(16)
-                self.tokens.append(token)
-                count = len(self.tokens)
-            return {"token": token, "token_id": f"TEST-token-{count}", "expires_at": iso(time.time() + 365 * 86400),
-                    "env_line": f"OTEL_EXPORTER_OTLP_HEADERS={AUTH_HEADER}={token}"}
+            return self.mint(str(args.get("name", "")).strip())
         return self.status(args.get("service_name"))
 
+    def mint(self, name):
+        if not 1 <= len(name) <= 100:
+            raise Fault(-32602, f"{CREATE} name must be 1 to 100 characters")
+        if self.mode == "member":
+            raise Fault(-32003, "only an organization's owners and admins create ingestion keys; ask one, or paste a key you were given",
+                        "not_owner_or_admin")
+        with self.lock:
+            if len(self.tokens) >= MINTS_PER_HOUR:
+                raise Fault(-32004, "five keys an hour per person have been created over MCP; reuse one, or try again later",
+                            "hourly_limit_reached")
+            token = "TEST-" + secrets.token_hex(16)
+            self.tokens.append(token)
+            token_id = f"TEST-token-{len(self.tokens)}"
+        return {"token": token, "token_id": token_id, "expires_at": rfc3339(time.time_ns() + 365 * 86400 * 10**9),
+                "env_line": f"OTEL_EXPORTER_OTLP_HEADERS={AUTH_HEADER}={token}"}, [token_id]
+
     def status(self, service=None):
+        if service is not None and not str(service).strip():
+            raise Fault(-32602, f"invalid {STATUS} args: service_name must not be blank")
         with self.lock:
             if self.mode == "blackhole":
                 old = {"trace_id": "0" * 32, "service_name": service or (self.guided or ["eval-node-api"])[0], "root_span_name": "GET /",
-                       "duration_ms": 12.0, "ingested_at": iso(time.time() - 3 * 86400)}
-                return {"has_sent_traces": True, "has_sent_logs": True, "has_sent_metrics": True, "latest_trace": old}
+                       "duration_ms": 12.0, "ingested_at": rfc3339(time.time_ns() - 3 * 86400 * 10**9)}
+                return {"has_sent_traces": True, "has_sent_logs": True, "has_sent_metrics": True, "latest_trace": old}, [old["trace_id"]]
             if self.mode == "busy":
                 self.received["traces"] = True
                 self.traces.append({"service_name": "eval-other-service", "namespace": "eval-other", "trace_id": "f" * 32,
-                                    "root_span_name": "GET /other", "duration_ms": 5.0, "ingested_at": time.time()})
+                                    "root_span_name": "GET /other", "duration_ms": 5.0, "ingested_at": time.time_ns()})
             status = {f"has_sent_{signal}": seen for signal, seen in self.received.items()}
             matching = [trace for trace in self.traces if service is None or trace["service_name"] == service]
             if matching:
                 latest_trace = {k: matching[-1][k] for k in ("trace_id", "service_name", "root_span_name", "duration_ms")}
-                latest_trace["ingested_at"] = iso(matching[-1]["ingested_at"])
+                latest_trace["ingested_at"] = rfc3339(matching[-1]["ingested_at"])
                 status["latest_trace"] = latest_trace
-            elif service is not None:
+                return status, [latest_trace["trace_id"]]
+            if service is not None:
                 status["latest_trace"] = None
-            return status
+            return status, []
 
     def otlp(self, signal, headers, body):
         if headers.get(AUTH_HEADER) not in self.tokens:
@@ -349,7 +410,7 @@ class Mock:
         if headers.get("Content-Encoding") == "gzip":
             body = gzip.decompress(body)
         batches = parse(body) if signal == "traces" else []
-        now = time.time()
+        now = time.time_ns()
         with self.lock:
             self.received[signal] = True
             for attributes, spans in batches:

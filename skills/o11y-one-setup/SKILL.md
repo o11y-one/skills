@@ -15,6 +15,7 @@ Connect every service in this repo to o11y.one, and prove it with that service's
 Work through the steps in order; each one links the reference that holds the detail.
 The endpoint, protocol, auth header, packages, versions and setup-file contents come from the o11y-one MCP tools while you work.
 Never write any of them from memory.
+Each tool's values are under `result` in its answer; every field this skill names is read from there.
 
 This skill only connects a repo.
 For dashboards, alerts, SLOs, querying telemetry that already arrives, or sending telemetry to another vendor, say this skill doesn't apply and stop.
@@ -25,7 +26,7 @@ For dashboards, alerts, SLOs, querying telemetry that already arrives, or sendin
 - No o11y-one server at all: stop, and give the user the command for their client. Claude Code: `claude mcp add --transport http o11y-one https://mcp.o11y.one/mcp`, then `/mcp` to sign in. Cursor: an `"o11y-one": { "url": "https://mcp.o11y.one/mcp" }` entry under `mcpServers` in `.cursor/mcp.json`, then sign in from its MCP settings. Codex: `codex mcp add o11y-one --url https://mcp.o11y.one/mcp`, then `codex mcp login o11y-one`.
 - The server is there but `get_ingest_config.v1`, `get_instrumentation_guide.v1` or `get_onboarding_status.v1` is missing, or one of those three comes back with `oauth token does not grant permission`: the sign-in predates them. Ask the user to sign in again (`/mcp` in Claude Code, `codex mcp login o11y-one` in Codex, the server's sign-in in Cursor's MCP settings), then retry once. See [troubleshooting](references/troubleshooting.md#mcp-tools-missing-or-not-allowed).
 - Only `create_ingestion_token.v1` is missing, or it refuses, even with a permission error: don't ask for a new sign-in. Carry on; step 3 covers it.
-- Call `get_ingest_config.v1` and keep its answer (`otlp_http_endpoint`, `otlp_grpc_endpoint`, `default_protocol`, `auth_header`, `env`) for steps 3, 4 and 6.
+- Call `get_ingest_config.v1` and keep its `result` (`otlp_http_endpoint`, `otlp_grpc_endpoint`, `default_protocol`, `auth_header`, `env`) for steps 3, 4 and 6.
 - The app must be able to run here, so the first trace can be checked before you finish. If it can't (its runtime is missing, or it needs services you can't start), do steps 1 to 5 and tell the user how to do step 6.
 
 ## 1. Detect the stack
@@ -40,16 +41,16 @@ For dashboards, alerts, SLOs, querying telemetry that already arrives, or sendin
 ## 2. Get the recipe
 
 - For each service, call `get_instrumentation_guide.v1` with `language`, `framework`, `service_name` and `service_namespace`, plus `agent_framework` and `module_type` when they apply, all from step 1.
-- The answer lists `packages`, `files` (each with a `path_hint` and a `load` value), an optional `start_command`, `env` lines, and `lockfile_refresh` and `verify` commands. Apply exactly that, and add nothing it doesn't list.
-- If the answer has `unsupported`, tell the user its reason and never invent a package. For an agent framework, offer the manual route in [agents](references/agents.md); otherwise skip that service.
+- Its `result` lists `packages`, `files` (each with a `path_hint` and a `load` value), an optional `start_command`, `env` lines, and `lockfile_refresh` and `verify` commands. Apply exactly that, and add nothing it doesn't list.
+- If the `result` has `unsupported`, tell the user its reason and never invent a package. For an agent framework, offer the manual route in [agents](references/agents.md); otherwise skip that service.
 - For an agent framework, read [agents](references/agents.md) before step 4.
 
 ## 3. Create the key
 
 - If the service's `.env` or the repo's secret manager already holds `OTEL_EXPORTER_OTLP_HEADERS` with the `auth_header` name, and the value is not the `<ingestion key>` placeholder, reuse it. Never create a second key on a re-run.
 - Otherwise call `create_ingestion_token.v1` with `name` set to `<repo>-<service>`, where `<repo>` is the repo name from the `origin` remote, or else the repo directory name. For several services, create one key named `<repo>` and use it for all of them.
-- Write the returned `env_line` only to a gitignored `.env`, or to the secret manager the repo already uses, following [keys-and-secrets](references/keys-and-secrets.md). Never print the key in full.
-- If the tool is missing or refuses (`not_owner_or_admin`, `no_user_on_session`, `hourly_limit_reached`, or a permission error), do not stop. Follow [members without key rights](references/keys-and-secrets.md#members-without-key-rights) and finish the other steps.
+- Write the `env_line` from its `result` only to a gitignored `.env`, or to the secret manager the repo already uses, following [keys-and-secrets](references/keys-and-secrets.md). Never print its `token`, the key, in full.
+- If the tool is missing, or refuses with an error whose `data.code` (also the start of its message) is `not_owner_or_admin`, `no_user_on_session` or `hourly_limit_reached`, or with a permission error, do not stop. Follow [members without key rights](references/keys-and-secrets.md#members-without-key-rights) and finish the other steps.
 
 ## 4. Apply the change
 
@@ -73,9 +74,9 @@ The SDK must start before the app loads what it instruments. [load-order](refere
 
 ## 6. Verify
 
-- Call `get_onboarding_status.v1` with `service_name` set to this service's name, and note its three flags. Then record the current UTC time as the start time.
+- Call `get_onboarding_status.v1` with `service_name` set to this service's name, and note the three `has_sent_*` flags in its `result`. Then record the current UTC time as the start time.
 - Start the service with the `.env` values in its environment, and send it one request or run one agent task. See [verify](references/verify.md).
-- Poll `get_onboarding_status.v1` with the same `service_name` every 5 seconds, for up to 2 minutes. With `service_name`, `latest_trace` is that service's newest trace, or null; the flags stay org-wide.
+- Poll `get_onboarding_status.v1` with the same `service_name` every 5 seconds, for up to 2 minutes. With `service_name`, `result.latest_trace` is that service's newest trace, or null; the flags stay org-wide.
 - Success is a `latest_trace` whose `ingested_at` is at or after the start time. A flag turning true is not success on its own.
 - A `latest_trace` can be up to 14 days old, so one from before the start time is not success: keep polling.
 - Then tell the user, per service, the service name, root span, duration and trace id, and every guide-directed edit you made. Stop every process you started.
