@@ -109,7 +109,7 @@ List every place that starts the service, because each one needs the same change
 
 In a workspace, the lockfile is usually at the root, and that manager applies to every member.
 JavaScript with no lockfile means npm.
-Python with `pyproject.toml` and none of `uv.lock`, `poetry.lock`, `Pipfile.lock` or `requirements*.txt` means pip: add the packages to `[project] dependencies` in `pyproject.toml`, then install them with pip into the active virtualenv.
+Python with `pyproject.toml` and none of `uv.lock`, `poetry.lock`, `Pipfile.lock` or `requirements*.txt` means pip, unless `pyproject.toml` declares `[tool.poetry]`, which means poetry. For pip, add the packages to `[project] dependencies` in `pyproject.toml`, then install them with pip into the active virtualenv.
 
 ## Report before you edit
 
