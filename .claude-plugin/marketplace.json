@@ -1,0 +1,12 @@
+{
+  "name": "o11y-one",
+  "owner": { "name": "o11y.one", "email": "support@o11y.one" },
+  "description": "The o11y.one plugin for Claude Code.",
+  "plugins": [
+    {
+      "name": "o11y-one",
+      "source": "./",
+      "description": "The o11y-one MCP server and the o11y-one-setup skill: connect a repo to o11y.one and confirm its first trace."
+    }
+  ]
+}
