@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Skill and manifest checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Frontmatter, names, index sync, links, anchors and versions
+        run: python3 scripts/check.py
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+      - name: Validate the marketplace manifest
+        run: npx -y @anthropic-ai/claude-code@2.1.296 plugin validate --strict .
+      - name: Validate the plugin manifest
+        run: npx -y @anthropic-ai/claude-code@2.1.296 plugin validate --strict .claude-plugin/plugin.json
