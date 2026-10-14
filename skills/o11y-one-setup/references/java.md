@@ -28,6 +28,7 @@ Java uses the OpenTelemetry Java agent. It needs no code changes and no new depe
 | A command you can't edit, such as a base image entrypoint or a buildpack | Append `-javaagent:<jar path>` to `JAVA_TOOL_OPTIONS`, keeping its current value |
 | `./mvnw spring-boot:run` or `./gradlew bootRun`, for local runs | Don't edit the build file. For verify, run the built jar with the flag, as below |
 
+The flag is a start-command flag, in a command or in `JAVA_TOOL_OPTIONS`, so it is a setup edit; list each place in the report.
 Every start command from [detect](detect.md) gets the flag. One place missed means one environment with no traces.
 [load-order](load-order.md#java) has the examples.
 
