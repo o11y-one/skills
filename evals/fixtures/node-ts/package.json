@@ -1,0 +1,9 @@
+{
+  "name": "eval-ts-api",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/server.js",
+  "scripts": { "build": "tsc", "start": "node dist/server.js" },
+  "dependencies": { "express": "latest" },
+  "devDependencies": { "typescript": "latest", "@types/express": "latest", "@types/node": "latest" }
+}

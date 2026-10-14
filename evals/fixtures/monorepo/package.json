@@ -1,0 +1,5 @@
+{
+  "name": "eval-mono",
+  "private": true,
+  "workspaces": ["services/*"]
+}
