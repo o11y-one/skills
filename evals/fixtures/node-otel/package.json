@@ -1,0 +1,11 @@
+{
+  "name": "eval-node-otel",
+  "version": "0.0.0",
+  "private": true,
+  "main": "server.js",
+  "scripts": { "start": "node --require ./tracing.js server.js" },
+  "dependencies": {
+    "@opentelemetry/auto-instrumentations-node": "latest",
+    "@opentelemetry/sdk-node": "latest"
+  }
+}
