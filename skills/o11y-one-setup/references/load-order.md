@@ -17,7 +17,7 @@ If it starts later, the app runs normally and sends no spans, or only some.
 | `first_import` | Make the import of the setup file the first statement of the entrypoint, above every other import. |
 | `start_flag` | Change every start command from [detect](detect.md): replace the command that matches `start_command.before_hint` with `start_command.after`. |
 | `framework_hook` | Put the contents where the framework runs them: Next.js `instrumentation.ts`, the place the Python app object is created, a gunicorn `post_fork` hook. |
-| `call_in_main` | Call the setup function as the first statement of `main()`, and defer its shutdown, so buffered spans are sent on exit. |
+| `call_in_main` | Paste the guide's call, the `call_in_main` file whose `path_hint` is a place in `func main()`, as it is, as the first statements of `main()`, and add the imports its `path_hint` names. The call defers the shutdown, so buffered spans are sent on exit. |
 
 When a `path_hint` names a file that already exists, insert the contents at the place `load` says; never overwrite the file.
 When it describes a place, such as "beside the entrypoint" or "right after `app = FastAPI(...)`", find that place first, then put the file or the insert there.
