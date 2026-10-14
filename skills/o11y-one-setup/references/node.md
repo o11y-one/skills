@@ -37,11 +37,11 @@ Follow the guide's `load` value. The shapes are:
 | --- | --- |
 | Plain JavaScript | `node --import ./tracing.mjs <entrypoint>` in every start command |
 | TypeScript compiled to CommonJS | `import './tracing'` as the first import of the entrypoint source |
-| A start command that isn't `node` itself (`nest start`, `nodemon`, `ts-node-dev`) | The same flag in `NODE_OPTIONS`, appended to any value already there |
+| Plain JavaScript started by a command that isn't `node` itself, such as `nodemon` | The same flag in `NODE_OPTIONS`, appended to any value already there |
 
 Pitfalls:
 
-- TypeScript: the setup file must be inside the `include` of `tsconfig.json`. Otherwise the build skips it, and the app crashes on the missing module. If `include` is `["src"]`, the file goes in `src/`.
+- TypeScript: the build compiles only files inside the `include` of `tsconfig.json`, so a setup file outside it is skipped, and the app crashes on the missing module. Keep the guide's `path_hint`. If it falls outside `include`, tell the user, and list the mismatch in the report.
 - A flag must point at a file the runtime loads: compiled JavaScript for `node dist/...`, and the `.ts` file only when the runner loads TypeScript itself.
 - `node: bad option: --import` means the project's Node.js version predates the flag. Tell the user, and don't change the Node.js version.
 - An existing `NODE_OPTIONS` with `--require` or `--import` of something else means another agent is already loaded; see [partial-instrumentation](partial-instrumentation.md).
@@ -55,4 +55,5 @@ More on ordering: [load-order](load-order.md#nodejs).
 2. Start the app with the `.env` values exported. Use the production start command (`start`) rather than a watcher, so only one process runs.
 3. The port is in the code or in `PORT`. Send the request from [verify](verify.md).
 
-To debug a silent run, set `OTEL_LOG_LEVEL=debug` and `OTEL_TRACES_EXPORTER=otlp,console` for one run. If spans are printed to stdout, the SDK works and export is the problem.
+To debug a silent run, set `OTEL_LOG_LEVEL=debug` for one run, and read the exporter errors it logs.
+The guide's setup passes its exporter in code, so `OTEL_TRACES_EXPORTER` changes nothing: spans missing from stdout are never a sign that the SDK is broken.
