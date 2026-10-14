@@ -49,6 +49,10 @@ Follow the guide's `load` value for each file. The shapes are:
 These calls go where the app object is created, not as a global `instrument()` in `telemetry.py`; see [load-order](load-order.md#python).
 They are part of the setup the guide prescribes; list each one in the report.
 
+When the entrypoint is a module inside a package, such as `app/main.py` run as `uvicorn app.main:app`, write `telemetry.py` beside it, in `app/`.
+Import it by its package path in place of the guide's `import telemetry`: `from app import telemetry`, or `import app.telemetry` when the entrypoint imports its other modules that way.
+Run the guide's `verify` commands with the file's real path, as in `python -m py_compile app/telemetry.py`.
+
 ## Forking servers
 
 Two setups start the SDK before the workers fork: gunicorn with `--preload`, and `opentelemetry-instrument` around a server with several workers.

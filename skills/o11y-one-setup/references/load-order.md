@@ -20,7 +20,7 @@ If it starts later, the app runs normally and sends no spans, or only some.
 | `call_in_main` | Call the setup function as the first statement of `main()`, and defer its shutdown, so buffered spans are sent on exit. |
 
 When a `path_hint` names a file that already exists, insert the contents at the place `load` says; never overwrite the file.
-When it describes a file in angle brackets, such as `<module that creates the FastAPI app>`, find that file first.
+When it describes a place, such as "beside the entrypoint" or "right after `app = FastAPI(...)`", find that place first, then put the file or the insert there.
 
 ## Node.js
 

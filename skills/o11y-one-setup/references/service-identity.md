@@ -18,6 +18,7 @@ Take the first rule that gives a name.
    - a service name in existing OpenTelemetry setup code.
 
    Use it exactly as written, even if it breaks the format below: dashboards and alerts may depend on it.
+   If `get_instrumentation_guide.v1` refuses it (a name may hold only letters, digits and `_.:/-`), tell the user, and propose the nearest allowed name: the same name with each other character replaced by `-`. Use that name only with their yes; without one, skip the service and say why.
 2. **The manifest name**, unless it is generic (see rule 4):
    - `package.json` `name`, without the scope: `@acme/billing-api` becomes `billing-api`.
    - `pyproject.toml` `[project] name` or `[tool.poetry] name`.

@@ -39,6 +39,9 @@ Follow the guide's `load` value. The shapes are:
 | TypeScript compiled to CommonJS | `import './tracing'` as the first import of the entrypoint source |
 | Plain JavaScript started by a command that isn't `node` itself, such as `nodemon` | The same flag in `NODE_OPTIONS`, appended to any value already there |
 
+The setup file goes beside the entrypoint, even when the entrypoint sits in a subdirectory such as `src/`.
+Then point `--import` at the file's real path from the directory the start command runs in, as in `node --import ./src/tracing.mjs src/server.js`, and run the guide's `verify` commands with that path, as in `node --check src/tracing.mjs`.
+
 Pitfalls:
 
 - TypeScript: the build compiles only files inside the `include` of `tsconfig.json`, so a setup file outside it is skipped, and the app crashes on the missing module. Keep the guide's `path_hint`. If it falls outside `include`, tell the user, and list the mismatch in the report.
