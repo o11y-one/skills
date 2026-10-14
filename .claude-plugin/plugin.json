@@ -1,0 +1,13 @@
+{
+  "name": "o11y-one",
+  "version": "1.0.0",
+  "description": "Connect a repo to o11y.one: the o11y-one MCP server and the o11y-one-setup skill, which instruments each service and confirms its first trace.",
+  "author": { "name": "o11y.one", "email": "support@o11y.one" },
+  "homepage": "https://o11y.one/docs/o11y/agent-skill",
+  "repository": "https://github.com/o11y-one/skills",
+  "license": "Apache-2.0",
+  "keywords": ["o11y.one", "opentelemetry", "observability", "tracing", "mcp", "agent-skills"],
+  "mcpServers": {
+    "o11y-one": { "type": "http", "url": "https://mcp.o11y.one/mcp" }
+  }
+}
