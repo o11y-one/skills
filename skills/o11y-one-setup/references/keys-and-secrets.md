@@ -28,8 +28,9 @@ Call `create_ingestion_token.v1` with `name`:
 - Several services: `<repo>`, one key shared by all of them.
 
 `<repo>` is the repo name from the `origin` remote, or else the repo directory name.
+Its values are under `result` in its answer.
 Keep `token_id` and `expires_at` for the report.
-The `env_line` it returns is the exact line to store.
+`env_line` is the exact line to store; the `token` it carries is the key.
 
 ## Where the key goes
 
@@ -56,12 +57,13 @@ For a secret manager, ask the user once whether to store the key there.
 ## Members without key rights
 
 Only owners and admins can create ingestion keys.
+A refusal is an error with no `result`: its `data.code` names the refusal, and its message starts with the same code.
 Take this path when any of these happens:
 
 - `create_ingestion_token.v1` is not in your tool list, while the other o11y-one tools are.
-- It returns `not_owner_or_admin`, or fails with `oauth token does not grant permission`.
-- It returns `no_user_on_session`, which means the sign-in is not tied to a person.
-- It returns `hourly_limit_reached`, and [Reuse before you create](#reuse-before-you-create) found no existing key.
+- It refuses with `not_owner_or_admin`, or fails with `oauth token does not grant permission`.
+- It refuses with `no_user_on_session`, which means the sign-in is not tied to a person.
+- It refuses with `hourly_limit_reached`, and [Reuse before you create](#reuse-before-you-create) found no existing key.
 
 Then:
 

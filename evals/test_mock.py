@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Self-check for mock_o11y.py: MCP replies, modes, key handling, OTLP decoding of protobuf, JSON, sized and chunked bodies, status with and without service_name, and the guides' shape. No agent, no network."""
+"""Self-check for mock_o11y.py: MCP replies in the real envelope, refusals in data.code, modes, key handling, OTLP decoding of protobuf, JSON, sized and chunked bodies, status with and without service_name, and the guides' shape. No agent, no network."""
 import calendar
 import gzip
 import http.client
 import json
+import re
 import time
 import urllib.error
 import urllib.request
@@ -70,8 +71,21 @@ def rpc(mock, method, params=None):
 
 
 def call(mock, tool, arguments=None):
+    """The tool's payload, read from under `result` as a client would, or the JSON-RPC error."""
     reply = rpc(mock, "tools/call", {"name": tool, "arguments": arguments or {}})
-    return reply["error"] if "error" in reply else json.loads(reply["result"]["content"][0]["text"])
+    if "error" in reply:
+        return reply["error"]
+    answer = reply["result"]
+    envelope = answer["structuredContent"]
+    assert answer["isError"] is False and json.loads(answer["content"][0]["text"]) == envelope
+    assert envelope["meta"]["tool"] == tool and envelope["meta"]["envelope_format"] == "mcp_response_envelope.v1"
+    assert envelope["correlation_ids"] == envelope["audit"]["correlation_ids"] and envelope["audit"]["outcome"] == "success"
+    return envelope["result"]
+
+
+def refused(error, code, slug):
+    assert (error["code"], error["data"]["code"]) == (code, slug), error
+    assert error["message"].startswith(f"{slug}: ") and error["data"]["audit"]["rejection_reason"] == error["message"]
 
 
 def listed(mock):
@@ -113,6 +127,8 @@ def owner():
         guides(mock)
         assert "latest_trace" not in call(mock, STATUS)
         assert call(mock, STATUS, {"service_name": "eval-svc"})["latest_trace"] is None
+        blank = call(mock, STATUS, {"service_name": " "})
+        assert blank["code"] == -32602 and "code" not in blank["data"], blank
         body = export_request("eval-svc", "eval-ns", "GET /")
         protobuf = {"Content-Type": "application/x-protobuf"}
         assert post(f"{mock.base}/v1/traces", body, protobuf)[0] == 401
@@ -125,6 +141,7 @@ def owner():
         latest = status["latest_trace"]
         assert status["has_sent_traces"] and not status["has_sent_logs"]
         assert (latest["service_name"], latest["root_span_name"], latest["duration_ms"]) == ("eval-svc", "GET /", 250.0)
+        assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{9}Z", latest["ingested_at"]), latest["ingested_at"]
         assert mock.traces[0]["namespace"] == "eval-ns"
         assert call(mock, STATUS, {"service_name": "eval-other"})["latest_trace"] is None
         chunked = export_request("eval-chunked", "eval-ns", "GET /chunked")
@@ -134,20 +151,37 @@ def owner():
         assert call(mock, STATUS, {"service_name": "eval-json"})["latest_trace"]["duration_ms"] == 250.0
         assert malformed_chunk(mock) == 400
         assert post(f"{mock.base}/mcp", b"{not json", {"Content-Type": "application/json"})[0] == 400
+        for _ in range(4):
+            assert call(mock, CREATE, {"name": "eval"})["token"].startswith("TEST-")
+        refused(call(mock, CREATE, {"name": "eval"}), -32004, "hourly_limit_reached")
+        assert len(mock.tokens) == 5
+    finally:
+        mock.close()
+
+
+def member():
+    """A member's mint is refused by the live role check, as a JSON-RPC error carrying its code in data.code, and mints nothing."""
+    mock = Mock("member")
+    try:
+        assert listed(mock) == set(TOOLS)
+        refused(call(mock, CREATE, {"name": "eval"}), -32003, "not_owner_or_admin")
+        assert not mock.tokens
+        assert call(mock, INGEST)["auth_header"] == AUTH_HEADER
     finally:
         mock.close()
 
 
 def other_modes():
-    for mode, tools in (("member", set(TOOLS) - {CREATE}), ("stale", set()), ("blackhole", set(TOOLS)), ("busy", set(TOOLS))):
+    for mode, tools in (("stale", set()), ("blackhole", set(TOOLS)), ("busy", set(TOOLS))):
         mock = Mock(mode)
         try:
             assert listed(mock) == tools, mode
-            if mode == "member":
-                assert call(mock, CREATE, {"name": "eval"})["code"] == -32003
+            if mode == "stale":
+                error = call(mock, STATUS)
+                assert error["code"] == -32003 and "data" not in error and "does not grant permission" in error["message"]
             if mode == "blackhole":
                 ingested = call(mock, STATUS)["latest_trace"]["ingested_at"]
-                assert time.time() - calendar.timegm(time.strptime(ingested, "%Y-%m-%dT%H:%M:%SZ")) > 86400
+                assert time.time() - calendar.timegm(time.strptime(ingested[:19], "%Y-%m-%dT%H:%M:%S")) > 86400
             if mode == "busy":
                 assert call(mock, STATUS)["latest_trace"]["service_name"] == "eval-other-service"
                 assert call(mock, STATUS, {"service_name": "eval-svc"})["latest_trace"] is None
@@ -157,5 +191,6 @@ def other_modes():
 
 if __name__ == "__main__":
     owner()
+    member()
     other_modes()
     print("mock ok")
