@@ -14,7 +14,7 @@ NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 LINK = re.compile(r"\]\(([^)\s]+)\)")
 HEADING = re.compile(r"^#{1,6} +(.+?) *$", re.M)
 FENCE = re.compile(r"^[ \t]*(```|~~~).*?^[ \t]*\1", re.M | re.S)
-LIVE_VALUES = re.compile(r"\b(?:(?:otlp|grpc)[a-z.-]*[.]o11y[.]one|api[.]o11y[.]one/v1/)|x-o11y-key|:431[78]\b", re.I)
+LIVE_VALUES = re.compile(r"\b(?:(?:otlp|grpc)[a-z.-]*[.]o11y[.]one|api[.]o11y[.]one(?!/mcp))|x-o11y-key|:431[78]\b", re.I)
 SKIP = {".git", "node_modules", "fixtures"}
 
 errors = []
