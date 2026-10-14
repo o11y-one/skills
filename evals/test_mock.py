@@ -2,6 +2,7 @@
 """Self-check for mock_o11y.py: MCP replies, modes, key handling, OTLP decoding of sized and chunked bodies, and status with and without service_name. No agent, no network."""
 import calendar
 import gzip
+import http.client
 import json
 import time
 import urllib.error
@@ -44,6 +45,15 @@ def post(url, body, headers):
             return response.status, response.read()
     except urllib.error.HTTPError as error:
         return error.code, error.read()
+
+
+def malformed_chunk(mock):
+    connection = http.client.HTTPConnection("127.0.0.1", mock.server.server_address[1], timeout=10)
+    try:
+        connection.request("POST", "/v1/traces", b"zz\r\nnot a chunk\r\n0\r\n\r\n", {"Transfer-Encoding": "chunked"})
+        return connection.getresponse().status
+    finally:
+        connection.close()
 
 
 def rpc(mock, method, params=None):
@@ -91,6 +101,8 @@ def owner():
         chunked = export_request("eval-chunked", "eval-ns", "GET /chunked")
         assert post(f"{mock.base}/v1/traces", iter([chunked[:9], chunked[9:]]), {**protobuf, AUTH_HEADER: token})[0] == 200
         assert call(mock, STATUS, {"service_name": "eval-chunked"})["latest_trace"]["root_span_name"] == "GET /chunked"
+        assert malformed_chunk(mock) == 400
+        assert post(f"{mock.base}/mcp", b"{not json", {"Content-Type": "application/json"})[0] == 400
     finally:
         mock.close()
 
