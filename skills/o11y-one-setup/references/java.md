@@ -25,7 +25,7 @@ Java uses the OpenTelemetry Java agent. It needs no code changes and no new depe
 | The service starts with | Change |
 | --- | --- |
 | `java ... -jar app.jar` or `java ... <main class>` in a `Dockerfile`, `Procfile` or script | Insert `-javaagent:<jar path>` right after `java`, before `-jar` or the main class |
-| A command you can't edit, such as a base image entrypoint or a buildpack | Append `-javaagent:<jar path>` to `JAVA_TOOL_OPTIONS`, keeping its current value |
+| A command you can't edit, such as a base image entrypoint or a buildpack | Append `-javaagent:<jar path>` to `JAVA_TOOL_OPTIONS`, keeping its current value. In a `Dockerfile`, set it in the runtime stage, after the build steps, so Maven and Gradle never load the agent during the image build |
 | `./mvnw spring-boot:run` or `./gradlew bootRun`, for local runs | Don't edit the build file. For verify, run the built jar with the flag, as below |
 
 The flag is a start-command flag, in a command or in `JAVA_TOOL_OPTIONS`, so it is a setup edit; list each place in the report.

@@ -31,7 +31,7 @@ If pip has no virtualenv to install into:
 
 1. Creating one is outside the setup edits, so ask the user first.
 2. With their yes, run `python3 -m venv .venv` in the service directory, add `.venv/` to `.gitignore` unless git already ignores it, and list both in the report.
-3. With a no, still change the manifest and write the guide's files. Skip the install, the guide's `verify` commands and the first-trace check, and tell the user the commands to run in their own environment.
+3. With a no, still change the manifest and make the setup edits. Skip the install, the guide's `verify` commands and the first-trace check, and tell the user the commands to run in their own environment.
 
 Don't run `opentelemetry-bootstrap -a install`. It guesses packages from whatever is installed and bypasses the lockfile, and OpenTelemetry's docs warn that it can fail under uv. Install only the guide's packages.
 
@@ -66,7 +66,8 @@ For verify, run one worker: `uvicorn main:app` without `--workers`, or `gunicorn
 ## Run it for verify
 
 - Use the project's interpreter: `uv run`, `poetry run`, `pipenv run`, or the virtualenv's `python`.
-- Export `.env` in the shell first, even when the project calls `load_dotenv()`: the setup module is imported before that call runs.
+- Export `.env` in the shell first, even when the project calls `load_dotenv()`: that call can run after the setup module's import.
+- If the entrypoint calls `load_dotenv()` after the setup module's import, the user's own runs start the SDK without its config. Say so in the report, and offer to move the call above that import; don't move it yourself.
 - Run without a reloader: no `--reload` for uvicorn, `--no-reload` for `flask run`, and `--noreload` for `manage.py runserver`.
 - A script or agent that exits right away still sends its spans, because the SDK flushes on exit. Don't end it with `os._exit`.
 
