@@ -2,4 +2,4 @@
 name = "eval-py-api"
 version = "0.0.0"
 requires-python = ">=3.10"
-dependencies = ["fastapi", "uvicorn"]
+dependencies = ["fastapi==0.143.0", "uvicorn==0.54.0"]
