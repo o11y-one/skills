@@ -8,6 +8,7 @@ No model grades anything.
 
 1. If another process already listens on one of the fixture's ports, the scenario fails at once and nothing is killed.
 2. The fixture is copied to a temp directory and committed to a fresh git repo, so the `.gitignore` and `git status` checks are real.
+   A Python fixture (one with `pyproject.toml`) also gets a `.venv`, made with `python3 -m venv`, and the agent runs with it active (`VIRTUAL_ENV` set, its `bin` first on `PATH`). The skill asks before it creates a virtualenv, and under `-p` nobody can answer.
 3. `mock_o11y.py` starts one local HTTP server that is both the o11y-one MCP server (`/mcp`) and an OTLP/HTTP sink (`/v1/traces`, `/v1/logs`, `/v1/metrics`) that takes protobuf or JSON, as the real ingest does.
    - Its `get_ingest_config.v1` points at the sink.
    - Its `get_instrumentation_guide.v1` answers as the real server does for the fixtures' stacks, at the versions the real server pins, and `unsupported` for any other stack.
