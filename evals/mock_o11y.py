@@ -334,19 +334,21 @@ def handler(mock):
             return b"".join(chunks)
 
         def do_POST(self):
-            body = self.body()
-            if self.path == "/mcp":
-                answer = mock.rpc(json.loads(body or b"{}"))
-                if answer is None:
-                    return self.reply(202)
-                return self.reply(200, json.dumps(answer).encode(), "application/json")
             signal = self.path.rsplit("/", 1)[-1]
-            if self.path.startswith("/v1/") and signal in mock.received:
-                try:
+            try:
+                body = self.body()
+                if self.path == "/mcp":
+                    message = json.loads(body or b"{}")
+                elif self.path.startswith("/v1/") and signal in mock.received:
                     return self.reply(mock.otlp(signal, self.headers, body))
-                except (ValueError, IndexError, UnicodeDecodeError, OSError):  # OSError covers a bad gzip body
-                    return self.reply(400)
-            self.reply(404)
+                else:
+                    return self.reply(404)
+            except (ValueError, IndexError, UnicodeDecodeError, OSError):  # OSError covers a bad gzip body
+                return self.reply(400)
+            answer = mock.rpc(message)
+            if answer is None:
+                return self.reply(202)
+            self.reply(200, json.dumps(answer).encode(), "application/json")
 
         def reply(self, code, data=b"", content_type="application/x-protobuf"):
             self.send_response(code)

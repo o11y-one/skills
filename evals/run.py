@@ -28,7 +28,11 @@ ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "evals" / "fixtures"
 PROMPT = "Set up o11y.one in this repo."
 SKILL = "o11y-one:o11y-one-setup"
+NEEDS = ("claude", "git", "lsof", "node", "npm", "python3")
+MAX_BUDGET_USD = os.environ.get("EVAL_MAX_BUDGET_USD", "5")
 TIMEOUT_S = 20 * 60
+FILE_TOOLS = {"Write", "Edit"}
+FIXTURE_GIT = ["-c", "user.name=eval", "-c", "user.email=eval@example.test", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
 SKIP = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist"}
 SERVED = [("key_only_in_ignored_env",), ("key_not_shown",), ("keys_minted", 1)]
 
@@ -84,12 +88,26 @@ def assistant_text(transcript):
     return "\n".join(texts)
 
 
+def tool_calls(transcript):
+    for event in events(transcript):
+        if event.get("type") == "assistant":
+            yield from (block for block in event.get("message", {}).get("content", []) if block.get("type") == "tool_use")
+
+
 def called_skill(transcript):
-    blocks = [block for event in events(transcript) if event.get("type") == "assistant" for block in event.get("message", {}).get("content", [])]
-    return any(block.get("type") == "tool_use" and block.get("name") == "Skill" and block.get("input", {}).get("skill") == SKILL for block in blocks)
+    return any(call.get("name") == "Skill" and call.get("input", {}).get("skill") == SKILL for call in tool_calls(transcript))
 
 
-def check(kind, arg, work, mock, said):
+def writes_env(call):
+    return call.get("name") in FILE_TOOLS and Path(str(call.get("input", {}).get("file_path", ""))).name.startswith(".env")
+
+
+def tool_inputs(transcript):
+    """Every tool call's input, except a file tool writing a .env file, which is where the key belongs."""
+    return "\n".join(json.dumps(call.get("input")) for call in tool_calls(transcript) if not writes_env(call))
+
+
+def check(kind, arg, work, mock, said, inputs):
     names = sorted({t["service_name"] for t in mock.traces})
     if kind == "trace_from":
         return arg in names, f"no trace from {arg}; the sink saw {names or 'nothing'} and refused {mock.rejected} requests"
@@ -103,7 +121,8 @@ def check(kind, arg, work, mock, said):
         shown = [str(p.relative_to(work)) for p in holders]
         return bool(holders) and not bad, f"key found in {shown}; must be only in gitignored .env files"
     if kind == "key_not_shown":
-        return not any(token in said for token in mock.tokens), "the agent printed the key"
+        leaked = any(token in said or token in inputs for token in mock.tokens)
+        return not leaked, "the agent printed the key, or put it in a tool call other than a .env write"
     if kind == "placeholder_in_env":
         found = any(p.name.startswith(".env") and mock_o11y.PLACEHOLDER in read(p) for p in files(work))
         return found, "no .env holds the <ingestion key> placeholder"
@@ -127,12 +146,20 @@ def check(kind, arg, work, mock, said):
     raise ValueError(f"unknown check {kind}")
 
 
-def stop_leftovers(pgid, ports):
-    # ponytail: kills the agent's process group and whatever listens on the fixture's ports; an app the agent detached on another port outlives the run
-    pids = []
-    for port in ports:
-        pids += subprocess.run(["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"], capture_output=True, text=True).stdout.split()
-    for kill, target in [(os.killpg, pgid)] + [(os.kill, int(pid)) for pid in pids]:
+def listeners(address):
+    return sorted(set(subprocess.run(["lsof", "-ti", address, "-sTCP:LISTEN"], capture_output=True, text=True).stdout.split()), key=int)
+
+
+def cwd_of(pid):
+    out = subprocess.run(["lsof", "-a", "-p", pid, "-d", "cwd", "-Fn"], capture_output=True, text=True).stdout
+    return next((Path(line[1:]) for line in out.splitlines() if line.startswith("n")), None)
+
+
+def stop_leftovers(pgid, work):
+    # ponytail: kills the agent's process group and every TCP listener running from the work dir; a detached process with another cwd outlives the run
+    root = work.resolve()
+    ours = [pid for pid in listeners("tcp") if (where := cwd_of(pid)) and where.resolve().is_relative_to(root)]
+    for kill, target in [(os.killpg, pgid)] + [(os.kill, int(pid)) for pid in ours]:
         try:
             kill(target, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
@@ -141,10 +168,15 @@ def stop_leftovers(pgid, ports):
 
 def run(name):
     fixture, mode, ports, checks = SCENARIOS[name]
+    busy = [f"port {port} is in use by pid {', '.join(pids)}; free it and rerun" for port in ports if (pids := listeners(f"tcp:{port}"))]
+    if busy:
+        return busy
     work = Path(tempfile.mkdtemp(prefix=f"o11y-eval-{name}-"))
     shutil.copytree(FIXTURES / fixture, work, dirs_exist_ok=True)
-    for args in (["init", "-q"], ["add", "-A"], ["-c", "user.name=eval", "-c", "user.email=eval@example.test", "commit", "-qm", "fixture"]):
-        git(work, *args)
+    for args in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "fixture"]):
+        result = git(work, *FIXTURE_GIT, *args)
+        if result.returncode:
+            return [f"git {' '.join(args)} failed in {work}: {result.stderr.strip()}"]
     mock = mock_o11y.Mock(mode)
     config = work.with_name(work.name + "-mcp.json")
     config.write_text(json.dumps({"mcpServers": {"o11y-one": {"type": "http", "url": f"{mock.base}/mcp"}}}))
@@ -155,10 +187,12 @@ def run(name):
     command = [
         "claude", "-p", PROMPT, "--plugin-dir", str(ROOT),
         "--mcp-config", str(config), "--strict-mcp-config", "--dangerously-skip-permissions",
-        "--output-format", "stream-json", "--verbose", "--no-session-persistence",
+        "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--max-budget-usd", MAX_BUDGET_USD,
     ]
+    env = {key: value for key, value in os.environ.items() if not key.startswith("OTEL_")}
+    env["CLAUDE_CONFIG_DIR"] = str(claude_dir)
     failures = []
-    agent = subprocess.Popen(command, cwd=work, env={**os.environ, "CLAUDE_CONFIG_DIR": str(claude_dir)}, stdin=subprocess.DEVNULL,
+    agent = subprocess.Popen(command, cwd=work, env=env, stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
     try:
         transcript, _ = agent.communicate(timeout=TIMEOUT_S)
@@ -167,15 +201,17 @@ def run(name):
         transcript, _ = agent.communicate()
         failures.append(f"timed out after {TIMEOUT_S}s")
     finally:
-        stop_leftovers(agent.pid, ports)
+        stop_leftovers(agent.pid, work)
         mock.close()
     log = work.with_name(work.name + "-transcript.jsonl")
     log.write_text(transcript)
-    said = assistant_text(transcript)
+    said, inputs = assistant_text(transcript), tool_inputs(transcript)
     if not called_skill(transcript):
         failures.append(f"the agent never called the Skill tool for {SKILL}, so the skill did not load")
+    for result in (event for event in events(transcript) if event.get("type") == "result" and event.get("is_error")):
+        failures.append(f"the agent stopped with {result.get('subtype')}: {'; '.join(result.get('errors') or [str(result.get('result'))])}")
     for kind, *arg in checks:
-        ok, why = check(kind, arg[0] if arg else None, work, mock, said)
+        ok, why = check(kind, arg[0] if arg else None, work, mock, said, inputs)
         if not ok:
             failures.append(why)
     if failures:
@@ -192,8 +228,11 @@ def main(names):
     unknown = sorted(set(names) - set(SCENARIOS))
     if unknown:
         sys.exit(f"unknown scenarios: {unknown}; known: {sorted(SCENARIOS)}")
+    missing = [tool for tool in NEEDS if not shutil.which(tool)]
+    if missing:
+        sys.exit(f"not on PATH: {', '.join(missing)}; the runner needs {', '.join(NEEDS)}")
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        sys.exit("ANTHROPIC_API_KEY is not set; the agent runs with an empty config dir, so it has no other login")
+        sys.exit("ANTHROPIC_API_KEY is not set; the agent runs with an empty config dir and signs in with that key")
     selected = names or list(SCENARIOS)
     failed = 0
     for name in selected:
